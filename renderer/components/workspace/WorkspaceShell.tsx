@@ -33,6 +33,7 @@ import {
   mockScreenshotFile,
   mockTranslateContent
 } from '@/lib/mock-services'
+import { testLlmConnection } from '@/lib/llm'
 
 type WorkspaceShellProps = {
   initialMode?: WorkspaceMode
@@ -62,7 +63,8 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const [prompts, setPrompts] = useState<PromptConfig[]>(DEFAULT_PROMPTS)
   const [activePromptId, setActivePromptId] = useState(prompts[0]?.id ?? 'general')
   const [llmConfigs, setLlmConfigs] = useState<LlmConfig[]>(DEFAULT_LLMS)
-  const [activeLlmId, setActiveLlmId] = useState(llmConfigs[0]?.id ?? 'openai-1')
+  const [activeLlmId, setActiveLlmId] = useState(llmConfigs[0]?.id ?? '')
+  const [llmLoaded, setLlmLoaded] = useState(false)
   const [newPromptName, setNewPromptName] = useState('')
   const [newPromptContent, setNewPromptContent] = useState('')
   const [newLlm, setNewLlm] = useState({ name: '', baseUrl: '', apiKey: '', model: '' })
@@ -80,6 +82,39 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatHistory])
+
+  useEffect(() => {
+    const loadLlmConfigs = async () => {
+      if (electronBridge.getLlmConfigs) {
+        try {
+          const stored = await electronBridge.getLlmConfigs()
+          const list = Array.isArray((stored as any).llms) ? ((stored as any).llms as LlmConfig[]) : []
+          const activeId = (stored as any).activeId as string | undefined
+          if (list.length) {
+            setLlmConfigs(list)
+            setActiveLlmId(activeId || list[0]?.id || '')
+            setLlmLoaded(true)
+            return
+          }
+        } catch (error) {
+          console.warn('[workspace] load llm configs failed, fallback to default', error)
+        }
+      }
+      setLlmConfigs(DEFAULT_LLMS)
+      setActiveLlmId(DEFAULT_LLMS[0]?.id ?? '')
+      setLlmLoaded(true)
+    }
+    loadLlmConfigs()
+  }, [])
+
+  useEffect(() => {
+    if (!llmLoaded) return
+    if (electronBridge.setLlmConfigs) {
+      electronBridge
+        .setLlmConfigs({ llms: llmConfigs, activeId: activeLlmId })
+        .catch(error => console.warn('[workspace] persist llm configs failed', error))
+    }
+  }, [llmConfigs, activeLlmId, llmLoaded])
 
   useEffect(() => {
     if (openSettingsOnMount) {
@@ -136,7 +171,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
       appendChat({
         id: makeId(),
         role: 'ai',
-        content: `文件 “${file.name}” 处理完成！`,
+        content: `文件 �?{file.name}�?处理完成！`,
         createdAt: Date.now()
       })
     }
@@ -240,28 +275,48 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
       provider: 'openai'
     }
     setLlmConfigs(prev => [...prev, llm])
+    setActiveLlmId(llm.id)
     setShowAddLlm(false)
     setTestStatus('idle')
     setNewLlm({ name: '', baseUrl: '', apiKey: '', model: '' })
   }
 
-  const handleTestNewLlm = () => {
-    if (!newLlm.baseUrl || !newLlm.apiKey) {
+  const handleTestNewLlm = async () => {
+    if (!newLlm.baseUrl || !newLlm.apiKey || !newLlm.model) {
       setTestStatus('error')
       return
     }
     setTestStatus('testing')
-    setTimeout(() => {
-      setTestStatus(Math.random() > 0.2 ? 'success' : 'error')
-    }, 1200)
+    try {
+      const ms = await testLlmConnection({
+        id: 'preview',
+        name: newLlm.name || '临时测试',
+        provider: 'openai',
+        baseUrl: newLlm.baseUrl,
+        apiKey: newLlm.apiKey,
+        model: newLlm.model
+      })
+      console.info(`[llm] new config test ok in ${ms}ms`)
+      setTestStatus('success')
+    } catch (error) {
+      console.error('[llm] new config test failed', error)
+      setTestStatus('error')
+    }
   }
 
-  const handleTestExistingLlm = (id: string) => {
+  const handleTestExistingLlm = async (id: string) => {
+    const config = llmConfigs.find(item => item.id === id)
+    if (!config) return
     setTestingLlmId(id)
-    setTimeout(() => {
+    try {
+      const ms = await testLlmConnection(config)
+      alert(`连接成功，耗时 ${ms}ms`)
+    } catch (error) {
+      console.error('[llm] test failed', error)
+      alert('连接失败，请检查 Base URL / API Key / 模型名')
+    } finally {
       setTestingLlmId(null)
-      alert(`连接成功！延迟 ${Math.floor(Math.random() * 200 + 50)}ms`)
-    }, 1000)
+    }
   }
 
   const handleAddParser = () => {

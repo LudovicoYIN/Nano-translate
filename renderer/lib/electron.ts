@@ -2,6 +2,9 @@ type ElectronBridge = {
   captureScreenshot: () => Promise<string>
   openSystemFile: () => Promise<string[]>
   performWindowAction: (action: 'close' | 'minimize' | 'maximize') => Promise<void>
+  getLlmConfigs?: () => Promise<{ llms: unknown; activeId?: string }>
+  setLlmConfigs?: (payload: { llms: unknown; activeId?: string }) => Promise<void>
+  testLlmConnection?: (payload: { baseUrl: string; apiKey: string }) => Promise<number>
 }
 
 declare global {
@@ -43,6 +46,10 @@ export const electronBridge: ElectronBridge = hasWindow && window.electron?.invo
           }
           return []
         }),
-      performWindowAction: action => window.electron!.invoke!('window-action', action).then(() => {})
+      performWindowAction: action => window.electron!.invoke!('window-action', action).then(() => {}),
+      getLlmConfigs: () =>
+        window.electron!.invoke!('get-llm-configs').then(result => result as { llms: unknown; activeId?: string }),
+      setLlmConfigs: payload => window.electron!.invoke!('set-llm-configs', payload).then(() => {}),
+      testLlmConnection: payload => window.electron!.invoke!('test-llm-connection', payload).then(Number)
     }
   : fallbackBridge

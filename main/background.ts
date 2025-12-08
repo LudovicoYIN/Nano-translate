@@ -2,6 +2,7 @@ import path from 'path'
 import { app, ipcMain, BrowserWindow, dialog } from 'electron'
 import serve from 'electron-serve'
 import { createWindow } from './helpers'
+import Store from 'electron-store'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -90,4 +91,48 @@ ipcMain.handle('select-file-paths', async () => {
 
 ipcMain.handle('capture-screenshot', async () => {
   return ''
+})
+
+type LlmConfig = {
+  id: string
+  name: string
+  provider: string
+  baseUrl: string
+  apiKey: string
+  model: string
+}
+
+type LlmStoreShape = {
+  llms: LlmConfig[]
+  activeId?: string
+}
+
+const llmStore = new Store<LlmStoreShape>({
+  name: 'llm-configs',
+  defaults: { llms: [], activeId: undefined }
+})
+
+ipcMain.handle('get-llm-configs', () => {
+  return llmStore.store
+})
+
+ipcMain.handle('set-llm-configs', (_event, payload: LlmStoreShape) => {
+  if (!payload || !Array.isArray(payload.llms)) return false
+  llmStore.set('llms', payload.llms)
+  llmStore.set('activeId', payload.activeId)
+  return true
+})
+
+ipcMain.handle('test-llm-connection', async (_event, payload: { baseUrl: string; apiKey: string }) => {
+  if (!payload?.baseUrl || !payload?.apiKey) {
+    throw new Error('baseUrl/apiKey is required')
+  }
+  const url = `${payload.baseUrl.replace(/\/+$/, '')}/v1/models`
+  const start = Date.now()
+  const res = await fetch(url, { method: 'GET', headers: { Authorization: `Bearer ${payload.apiKey}` } })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`HTTP ${res.status}: ${text || res.statusText}`)
+  }
+  return Date.now() - start
 })

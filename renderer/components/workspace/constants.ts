@@ -35,22 +35,6 @@ export const DEFAULT_PROMPTS: PromptConfig[] = [
 ]
 
 export const DEFAULT_LLMS: LlmConfig[] = [
-  {
-    id: 'openai-1',
-    name: 'OpenAI 官方',
-    provider: 'openai',
-    baseUrl: 'https://api.openai.com/v1',
-    apiKey: 'sk-********',
-    model: 'gpt-4o'
-  },
-  {
-    id: 'deepseek',
-    name: 'DeepSeek 兼容',
-    provider: 'openai',
-    baseUrl: 'https://api.deepseek.com',
-    apiKey: 'sk-********',
-    model: 'deepseek-chat'
-  }
 ]
 
 export const DEFAULT_PARSERS: ParserConfig[] = [
