@@ -1,0 +1,6 @@
+全局模式：通过 mode state 维护“全功能编辑器”与“Mini 聊天浮窗”两套布局，头部按钮可即时切换，full 模式渲染历史侧栏+源文档+编辑器，mini 模式只保留聊天容器（ui/demo.tsx (line 55), ui/demo.tsx (line 535), ui/demo.tsx (line 570), ui/demo.tsx (line 600), ui/demo.tsx (line 635)）。
+文档导入流程：左侧源文档区提供 Prompt 下拉、文件上传/拖拽、截图按钮，上传后触发 handleFileUpload→processTranslation，期间展示读取/解析/AI 推理进度并在 full 模式下自动折叠源文档，粘贴截图也会走同样流程（ui/demo.tsx (line 83), ui/demo.tsx (line 128), ui/demo.tsx (line 137), ui/demo.tsx (line 176), ui/demo.tsx (line 666)）。
+翻译结果编辑：右侧保持 Markdown 文本、Undo/Redo 历史栈、复制与导出按钮、底部字数与自动保存提示，并通过 updateContent 维护多级历史（ui/demo.tsx (line 60), ui/demo.tsx (line 105), ui/demo.tsx (line 724), ui/demo.tsx (line 731), ui/demo.tsx (line 748), ui/demo.tsx (line 797)）。
+AI 协作 & Mini 聊天：Mini 模式是一套独立对话输入区，chatHistory 与 handleSendMessage 驱动气泡式记录；full 模式则有“AI 智能修改”浮窗，可在当前 Markdown 上追加修改说明（ui/demo.tsx (line 66), ui/demo.tsx (line 196), ui/demo.tsx (line 600), ui/demo.tsx (line 764), ui/demo.tsx (line 790)）。
+配置面板：悬浮 settings modal 下分 Prompt 管理、LLM 接入与文档解析服务三页签，支持增删默认项、连接测试、表单校验/显示 API 元信息（ui/demo.tsx (line 71), ui/demo.tsx (line 257), ui/demo.tsx (line 306), ui/demo.tsx (line 357), ui/demo.tsx (line 393), ui/demo.tsx (line 441), ui/demo.tsx (line 483)）。
+辅助元素：history 侧栏罗列最近处理的文档/图片，顶部快捷键提示、处理完成后的 mini-mode 气泡提醒、源文档折叠按钮等都把流程提示补全（ui/demo.tsx (line 570), ui/demo.tsx (line 574), ui/demo.tsx (line 155), ui/demo.tsx (line 159), ui/demo.tsx (line 717)）。
