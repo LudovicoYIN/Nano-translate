@@ -1,5 +1,5 @@
 import path from 'path'
-import { app, ipcMain, BrowserWindow } from 'electron'
+import { app, ipcMain, BrowserWindow, dialog } from 'electron'
 import serve from 'electron-serve'
 import { createWindow } from './helpers'
 
@@ -74,4 +74,20 @@ ipcMain.handle('window-action', (_, action: 'close' | 'minimize' | 'maximize') =
     default:
       break
   }
+})
+
+ipcMain.handle('select-file-paths', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openFile'],
+    filters: [
+      { name: 'Documents', extensions: ['pdf', 'docx', 'md'] },
+      { name: 'Images', extensions: ['png', 'jpg', 'jpeg'] },
+      { name: 'All Files', extensions: ['*'] }
+    ]
+  })
+  return result.canceled ? [] : result.filePaths
+})
+
+ipcMain.handle('capture-screenshot', async () => {
+  return ''
 })
