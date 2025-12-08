@@ -320,6 +320,12 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
     setMode(prev => (prev === 'full' ? 'mini' : 'full'))
   }
 
+  const handleWindowAction = (action: 'close' | 'minimize' | 'maximize') => {
+    electronBridge.performWindowAction(action).catch(error => {
+      console.warn('[workspace] window action failed', error)
+    })
+  }
+
   const agentProps = {
     showAgentInput,
     onToggleAgentInput: setShowAgentInput,
@@ -394,7 +400,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   )
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-200 p-4">
+    <div className="flex min-h-screen items-center justify-center bg-transparent px-6 py-4">
       <SettingsDrawer
         open={showSettings}
         onClose={() => setShowSettings(false)}
@@ -404,20 +410,39 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
         llmProps={settingsLlmProps}
         parserProps={settingsParserProps}
       />
-      <div className={`flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl transition-all ${shellClasses}`}>
-        <header className="flex h-14 items-center justify-between border-b border-slate-100 bg-slate-50 px-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
-              <Languages size={18} />
+      <div className={`flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white/95 shadow-2xl transition-all ${shellClasses}`}>
+        <header className="drag-region flex h-14 select-none items-center justify-between border-b border-slate-100 bg-slate-50/95 px-4 backdrop-blur">
+          <div className="flex items-center gap-4">
+            <div className="no-drag flex items-center gap-2">
+              <button
+                aria-label="关闭窗口"
+                className="h-3.5 w-3.5 rounded-full bg-[#ff5f57] shadow-inner transition hover:scale-105"
+                onClick={() => handleWindowAction('close')}
+              />
+              <button
+                aria-label="最小化窗口"
+                className="h-3.5 w-3.5 rounded-full bg-[#febb2e] shadow-inner transition hover:scale-105"
+                onClick={() => handleWindowAction('minimize')}
+              />
+              <button
+                aria-label="最大化窗口"
+                className="h-3.5 w-3.5 rounded-full bg-[#28c840] shadow-inner transition hover:scale-105"
+                onClick={() => handleWindowAction('maximize')}
+              />
             </div>
-            <span className="font-bold text-slate-700">TransLate Pro</span>
-            {mode === 'full' && (
-              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                AI Editor
-              </span>
-            )}
+            <div className="no-drag flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
+                <Languages size={18} />
+              </div>
+              <span className="font-bold text-slate-700">TransLate Pro</span>
+              {mode === 'full' && (
+                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                  AI Editor
+                </span>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="no-drag flex items-center gap-3">
             {mode === 'full' && (
               <>
                 <div className="hidden items-center gap-1 text-xs text-slate-400 md:flex">
@@ -437,7 +462,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
             </button>
           </div>
         </header>
-        <div className="flex flex-1 overflow-hidden">
+        <div className="no-drag flex flex-1 overflow-hidden">
           {mode === 'full' && <HistorySidebar items={historyItems} />}
           <main className="relative flex flex-1 bg-white">
             {mode === 'mini' ? (

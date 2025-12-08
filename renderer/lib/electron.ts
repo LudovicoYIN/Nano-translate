@@ -1,6 +1,7 @@
 type ElectronBridge = {
   captureScreenshot: () => Promise<string>
   openSystemFile: () => Promise<string[]>
+  performWindowAction: (action: 'close' | 'minimize' | 'maximize') => Promise<void>
 }
 
 declare global {
@@ -21,6 +22,10 @@ const fallbackBridge: ElectronBridge = {
   openSystemFile: async () => {
     console.warn('[electronBridge] openSystemFile fallback triggered')
     return Promise.resolve([])
+  },
+  performWindowAction: async action => {
+    console.warn(`[electronBridge] window action fallback: ${action}`)
+    return Promise.resolve()
   }
 }
 
@@ -37,6 +42,7 @@ export const electronBridge: ElectronBridge = hasWindow && window.electron?.invo
             return [result]
           }
           return []
-        })
+        }),
+      performWindowAction: action => window.electron!.invoke!('window-action', action).then(() => {})
     }
   : fallbackBridge

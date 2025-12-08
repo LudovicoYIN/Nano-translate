@@ -64,8 +64,14 @@ export function SettingsDrawer({
   if (!open) return null
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="flex h-[600px] w-[800px] overflow-hidden rounded-xl bg-white shadow-2xl">
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center px-6 py-8"
+      onClick={event => {
+        if (event.target === event.currentTarget) {
+          onClose()
+        }
+      }}>
+      <div className="flex h-[600px] w-[800px] overflow-hidden rounded-xl bg-white/95 shadow-[0_25px_65px_rgba(15,23,42,0.25)] backdrop-blur">
         <SettingsSidebar
           activeTab={tab}
           onTabChange={onTabChange}
