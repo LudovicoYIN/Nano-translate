@@ -12,9 +12,18 @@ const handler = {
     return () => {
       ipcRenderer.removeListener(channel, subscription)
     }
+  },
+  invoke(channel: string, value?: unknown) {
+    return ipcRenderer.invoke(channel, value)
   }
 }
 
+const electronBridge = {
+  invoke: (channel: string, payload?: unknown) => ipcRenderer.invoke(channel, payload)
+}
+
 contextBridge.exposeInMainWorld('ipc', handler)
+contextBridge.exposeInMainWorld('electron', electronBridge)
 
 export type IpcHandler = typeof handler
+export type ElectronBridgeHandler = typeof electronBridge

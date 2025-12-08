@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState, ChangeEvent } from 'react'
 import { Languages, Settings, Minimize2, Maximize2, Monitor } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { HistorySidebar } from './HistorySidebar'
 import { MiniChat } from './MiniChat'
 import { ResultPanel } from './ResultPanel'
@@ -73,6 +74,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const [newParser, setNewParser] = useState({ name: '', type: 'MinerU', url: '', apiKey: '' })
   const [showAddParser, setShowAddParser] = useState(false)
   const [historyItems] = useState(DEFAULT_HISTORY)
+  const [windowState, setWindowState] = useState<'normal' | 'maximized' | 'fullscreen'>('normal')
   const chatEndRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -391,16 +393,35 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
     onAddParser: handleAddParser
   }
 
-  const shellClasses = useMemo(
-    () =>
-      mode === 'full'
-        ? 'w-full h-[90vh] max-w-7xl'
-        : 'h-[600px] w-[400px]',
-    [mode]
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.ipc?.on) return
+    const dispose = window.ipc.on('window-state', (state: unknown) => {
+      if (state === 'fullscreen' || state === 'maximized' || state === 'normal') {
+        setWindowState(state)
+      }
+    })
+    return dispose
+  }, [])
+
+  const shellClasses = useMemo(() => {
+    if (windowState !== 'normal') {
+      return 'h-screen w-screen'
+    }
+    return mode === 'full' ? 'w-full h-[90vh] max-w-7xl' : 'h-[600px] w-[400px]'
+  }, [mode, windowState])
+
+  const containerClass = cn(
+    'flex flex-col overflow-hidden bg-white/95 transition-all',
+    shellClasses,
+    windowState !== 'normal' ? 'rounded-none border border-slate-200 shadow-none' : 'rounded-2xl border border-slate-200 shadow-2xl'
   )
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-transparent px-6 py-4">
+    <div
+      className={cn(
+        'flex min-h-screen w-full bg-transparent',
+        windowState !== 'normal' ? 'items-stretch justify-stretch px-0 py-0' : 'items-center justify-center px-6 py-4'
+      )}>
       <SettingsDrawer
         open={showSettings}
         onClose={() => setShowSettings(false)}
@@ -410,7 +431,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
         llmProps={settingsLlmProps}
         parserProps={settingsParserProps}
       />
-      <div className={`flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white/95 shadow-2xl transition-all ${shellClasses}`}>
+      <div className={containerClass}>
         <header className="drag-region flex h-14 select-none items-center justify-between border-b border-slate-100 bg-slate-50/95 px-4 backdrop-blur">
           <div className="flex items-center gap-4">
             <div className="no-drag flex items-center gap-2">

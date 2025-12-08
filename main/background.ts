@@ -31,6 +31,13 @@ if (isProd) {
   })
 
   mainWindow.setMenuBarVisibility(false)
+  const emitWindowState = (state: 'normal' | 'maximized' | 'fullscreen') => {
+    mainWindow.webContents.send('window-state', state)
+  }
+  mainWindow.on('enter-full-screen', () => emitWindowState('fullscreen'))
+  mainWindow.on('leave-full-screen', () => emitWindowState('normal'))
+  mainWindow.on('maximize', () => emitWindowState('maximized'))
+  mainWindow.on('unmaximize', () => emitWindowState('normal'))
 
   if (isProd) {
     await mainWindow.loadURL('app://./')
@@ -56,7 +63,9 @@ ipcMain.handle('window-action', (_, action: 'close' | 'minimize' | 'maximize') =
       target.minimize()
       break
     case 'maximize':
-      if (target.isMaximized()) {
+      if (process.platform === 'darwin') {
+        target.setFullScreen(!target.isFullScreen())
+      } else if (target.isMaximized()) {
         target.unmaximize()
       } else {
         target.maximize()
