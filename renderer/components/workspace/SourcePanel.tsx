@@ -1,7 +1,6 @@
 'use client'
 
-import { Check, FileText, Image as ImageIcon, Upload } from 'lucide-react'
-import { ChangeEvent } from 'react'
+import { Check, FileText } from 'lucide-react'
 import { PromptConfig, WorkspaceFile } from './types'
 
 type SourcePanelProps = {
@@ -12,7 +11,6 @@ type SourcePanelProps = {
   prompts: PromptConfig[]
   activePromptId: string
   onPromptChange: (id: string) => void
-  onSelectFiles: (files: FileList | File[]) => void
   onDeleteFile: () => void
   onReprocess: () => void
   onPasteScreenshot: () => void
@@ -27,17 +25,17 @@ export function SourcePanel({
   prompts,
   activePromptId,
   onPromptChange,
-  onSelectFiles,
   onDeleteFile,
   onReprocess,
   onPasteScreenshot,
   onOpenSystemFile
 }: SourcePanelProps) {
   const currentFile = files[0]
+  const formatSize = (size: number) => `${(size / 1024).toFixed(1)} KB`
 
   return (
-    <div className="flex h-full flex-1 flex-col rounded-2xl border border-slate-200 bg-slate-50/60 p-6">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="flex h-full flex-1 flex-col rounded-2xl border border-slate-200 bg-slate-50/60 p-5">
+      <div className="mb-4 flex items-center justify-between">
         <div>
           <p className="text-xs uppercase tracking-wide text-slate-400">Source</p>
           <h2 className="text-lg font-bold text-slate-800">源文档</h2>
@@ -48,89 +46,69 @@ export function SourcePanel({
           onPromptChange={onPromptChange}
         />
       </div>
-      {currentFile ? (
-        <div className="relative flex h-full flex-1 flex-col items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white p-10 shadow-sm">
-          <FileText
-            size={64}
-            className={`mb-6 text-blue-500 ${isProcessing ? 'animate-bounce' : ''}`}
-          />
-          <h3
-            className="max-w-[70%] truncate text-center text-xl font-bold text-slate-800"
-            title={currentFile.name}>
-            {currentFile.name}
-          </h3>
-          <p className="mt-1 mb-8 text-sm text-slate-500">{(currentFile.size / 1024).toFixed(1)} KB</p>
-          {isProcessing ? (
-            <div className="w-full max-w-sm space-y-3">
-              <div className="flex justify-between text-xs font-semibold text-slate-600">
-                <span>{processingLabel}</span>
-                <span>{processingPercent}%</span>
+      <div className="flex flex-1 flex-col rounded-xl border border-dashed border-slate-200 bg-white/80 p-4">
+        {currentFile ? (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start gap-3">
+              <div className="rounded-lg bg-blue-50 p-2 text-blue-600">
+                <FileText size={20} />
               </div>
-              <div className="h-2.5 rounded-full border border-slate-100 bg-slate-100">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
-                  style={{ width: `${processingPercent}%` }}
-                />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-base font-semibold text-slate-800" title={currentFile.name}>
+                  {currentFile.name}
+                </div>
+                <div className="text-xs text-slate-500">{formatSize(currentFile.size)}</div>
               </div>
             </div>
-          ) : (
-            <div className="flex gap-3">
+            {isProcessing ? (
+              <div className="space-y-2 rounded-lg border border-slate-100 bg-slate-50 p-3">
+                <div className="flex justify-between text-xs font-semibold text-slate-600">
+                  <span>{processingLabel}</span>
+                  <span>{processingPercent}%</span>
+                </div>
+                <div className="h-2.5 rounded-full border border-slate-100 bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-400 transition-all"
+                    style={{ width: `${processingPercent}%` }}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-3">
+                <button
+                  className="rounded-md px-3 py-1.5 text-sm text-red-500 transition-colors hover:bg-red-50"
+                  onClick={onDeleteFile}>
+                  删除
+                </button>
+                <button
+                  className="rounded-md bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-100"
+                  onClick={onReprocess}>
+                  重新解析
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center text-center text-slate-500">
+            <p className="text-sm">请在左侧“上传文件”按钮导入文档</p>
+            <p className="mt-1 text-xs text-slate-400">或使用以下快捷操作</p>
+            <div className="mt-4 flex gap-3">
               <button
-                className="rounded-md px-3 py-1.5 text-sm text-red-500 transition-colors hover:bg-red-50"
-                onClick={onDeleteFile}>
-                删除
+                type="button"
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-600 shadow-sm transition hover:border-blue-400 hover:text-blue-600"
+                onClick={onOpenSystemFile}>
+                选择系统文件
               </button>
               <button
-                className="rounded-md bg-blue-50 px-3 py-1.5 text-sm font-medium text-blue-600 transition-colors hover:bg-blue-100"
-                onClick={onReprocess}>
-                重新解析
+                type="button"
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-medium text-slate-600 shadow-sm transition hover:border-blue-400 hover:text-blue-600"
+                onClick={onPasteScreenshot}>
+                粘贴截图
               </button>
             </div>
-          )}
-        </div>
-      ) : (
-        <label
-          className="group flex h-full w-full flex-1 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-white text-slate-400 transition-all hover:border-blue-400 hover:bg-blue-50/30"
-          onDragOver={event => {
-            event.preventDefault()
-          }}
-          onDrop={event => {
-            event.preventDefault()
-            if (event.dataTransfer?.files?.length) {
-              onSelectFiles(event.dataTransfer.files)
-            }
-          }}>
-          <input
-            id="workspace-upload"
-            type="file"
-            className="hidden"
-            accept=".pdf,.docx,.jpg,.jpeg,.png"
-            onChange={(event: ChangeEvent<HTMLInputElement>) => {
-              onSelectFiles(event.target.files ?? [])
-              event.target.value = ''
-            }}
-          />
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 transition-transform group-hover:scale-110">
-            <Upload className="text-slate-400 group-hover:text-blue-500" size={32} />
           </div>
-          <p className="font-medium text-slate-600">点击或拖拽上传</p>
-          <p className="text-xs text-slate-400">支持 PDF / Word / 图片，或直接粘贴截图</p>
-          <div className="mt-6 flex gap-4">
-            <button
-              type="button"
-              className="flex items-center gap-2 rounded-lg border bg-white px-5 py-2 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:text-blue-600"
-              onClick={onPasteScreenshot}>
-              <ImageIcon size={14} /> 粘贴截图
-            </button>
-            <button
-              type="button"
-              className="flex items-center gap-2 rounded-lg border bg-white px-5 py-2 text-xs font-medium text-slate-600 shadow-sm transition-colors hover:text-blue-600"
-              onClick={onOpenSystemFile}>
-              <FileText size={14} /> 系统文件
-            </button>
-          </div>
-        </label>
-      )}
+        )}
+      </div>
     </div>
   )
 }

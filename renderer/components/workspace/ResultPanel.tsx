@@ -1,21 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import {
-  Bot,
-  Check,
-  Copy,
-  CornerDownLeft,
-  Download,
-  FileCode,
-  Loader2,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Redo,
-  Sparkles,
-  Undo,
-  X
-} from 'lucide-react'
+import { Bot, Check, CornerDownLeft, Download, FileCode, Loader2, PanelLeftClose, PanelLeftOpen, Sparkles, X } from 'lucide-react'
+import { ChatMessage } from './types'
 
 type AgentProps = {
   showAgentInput: boolean
@@ -25,38 +12,35 @@ type AgentProps = {
   onAgentSubmit: () => void
   isAgentWorking: boolean
   hasContent: boolean
+  history: ChatMessage[]
 }
 
 type ResultPanelProps = {
   markdownOutput: string
   onContentChange: (value: string) => void
-  historyIndex: number
-  historyLength: number
-  onUndo: () => void
-  onRedo: () => void
-  onCopy: () => void
   onExport: (format: 'pdf' | 'docx' | 'markdown') => void
   isExporting: boolean
   agentProps: AgentProps
   isSourceCollapsed: boolean
   onToggleSource: () => void
   charCount: number
+  isProcessing: boolean
+  processingLabel: string
+  processingPercent: number
 }
 
 export function ResultPanel({
   markdownOutput,
   onContentChange,
-  historyIndex,
-  historyLength,
-  onUndo,
-  onRedo,
-  onCopy,
   onExport,
   isExporting,
   agentProps,
   isSourceCollapsed,
   onToggleSource,
-  charCount
+  charCount,
+  isProcessing,
+  processingLabel,
+  processingPercent
 }: ResultPanelProps) {
   const [exportFormat, setExportFormat] = useState<'pdf' | 'docx' | 'markdown'>('pdf')
   const exportDisabled = !markdownOutput || isExporting
@@ -74,46 +58,21 @@ export function ResultPanel({
           翻译结果
         </h2>
         <div className="flex items-center gap-2">
-          <div className="mr-2 flex items-center rounded-lg bg-slate-100 p-0.5">
-            <button
-              onClick={onUndo}
-              disabled={historyIndex <= 0}
-              className="rounded-md p-1.5 text-slate-500 transition-all hover:bg-white hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-30"
-              title="撤销">
-              <Undo size={16} />
-            </button>
-            <div className="mx-0.5 h-4 w-px bg-slate-300" />
-            <button
-              onClick={onRedo}
-              disabled={historyIndex >= historyLength - 1}
-              className="rounded-md p-1.5 text-slate-500 transition-all hover:bg-white hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-30"
-              title="重做">
-              <Redo size={16} />
-            </button>
-          </div>
+          <select
+            value={exportFormat}
+            onChange={event => setExportFormat(event.target.value as 'pdf' | 'docx' | 'markdown')}
+            className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition focus:border-blue-400 focus:outline-none disabled:opacity-50"
+            disabled={!markdownOutput || isExporting}>
+            <option value="pdf">PDF</option>
+            <option value="docx">Word</option>
+            <option value="markdown">Markdown</option>
+          </select>
           <button
-            className="p-2 text-slate-400 transition-colors hover:text-blue-600"
-            onClick={onCopy}
-            title="复制">
-            <Copy size={18} />
+            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+            onClick={() => onExport(exportFormat)}
+            disabled={exportDisabled}>
+            {isExporting ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />} 导出
           </button>
-          <div className="flex items-center gap-2">
-            <select
-              value={exportFormat}
-              onChange={event => setExportFormat(event.target.value as 'pdf' | 'docx' | 'markdown')}
-              className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition focus:border-blue-400 focus:outline-none disabled:opacity-50"
-              disabled={!markdownOutput || isExporting}>
-              <option value="pdf">PDF</option>
-              <option value="docx">Word</option>
-              <option value="markdown">Markdown</option>
-            </select>
-            <button
-              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={() => onExport(exportFormat)}
-              disabled={exportDisabled}>
-              {isExporting ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />} 导出
-            </button>
-          </div>
         </div>
       </div>
       <div className="relative flex-1">
@@ -131,6 +90,13 @@ export function ResultPanel({
               <p>翻译结果将显示在这里</p>
               <p className="mt-2 text-xs text-slate-400">上传文件后自动开始</p>
             </div>
+          </div>
+        )}
+        {isProcessing && (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-white/80 backdrop-blur-sm">
+            <Loader2 className="h-10 w-10 animate-spin text-blue-500" />
+            <div className="text-sm font-semibold text-slate-700">{processingLabel || '处理中...'}</div>
+            <div className="text-xs text-slate-500">{processingPercent}%</div>
           </div>
         )}
         <AgentInput {...agentProps} />
@@ -153,7 +119,8 @@ function AgentInput({
   onAgentQueryChange,
   onAgentSubmit,
   isAgentWorking,
-  hasContent
+  hasContent,
+  history
 }: AgentProps) {
   return (
     <>
@@ -164,7 +131,7 @@ function AgentInput({
         <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl ring-1 ring-black/5">
           <div className="flex items-center gap-2 px-2 pt-1">
             <Bot className="text-purple-600" size={16} />
-            <span className="text-xs font-bold text-slate-700">AI 智能修改</span>
+            <span className="text-xs font-bold text-slate-700">AI 智能回答</span>
             <div className="flex-1" />
             <button
               onClick={() => onToggleAgentInput(false)}
@@ -172,11 +139,28 @@ function AgentInput({
               <X size={14} />
             </button>
           </div>
+          <div className="max-h-48 space-y-2 overflow-y-auto px-2 pb-1">
+            {history.length === 0 ? (
+              <p className="text-center text-[11px] text-slate-400">输入问题，即可获得 AI 回答</p>
+            ) : (
+              history.map(message => (
+                <div
+                  key={message.id}
+                  className={`w-full rounded-2xl px-3 py-1.5 text-xs leading-relaxed ${
+                    message.role === 'user'
+                      ? 'rounded-br-none bg-purple-50 text-purple-700'
+                      : 'rounded-bl-none bg-slate-100 text-slate-700'
+                  }`}>
+                  <span className="font-semibold">{message.role === 'user' ? '我' : 'AI'}</span>：{message.content}
+                </div>
+              ))
+            )}
+          </div>
           <div className="relative">
             <input
               type="text"
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:border-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-500/20"
-              placeholder="输入修改指令，例如：语气更正式一些..."
+              placeholder="请输入问题，例如：总结要点？"
               value={agentQuery}
               onChange={event => onAgentQueryChange(event.target.value)}
               onKeyDown={event => {
@@ -198,7 +182,7 @@ function AgentInput({
         <button
           onClick={() => onToggleAgentInput(true)}
           className="group absolute bottom-6 right-6 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-purple-600 shadow-lg transition-all hover:scale-110 hover:shadow-xl"
-          title="唤起 AI 修改">
+          title="唤起 AI 问答">
           <Sparkles className="transition-transform group-hover:rotate-12" size={18} />
         </button>
       )}

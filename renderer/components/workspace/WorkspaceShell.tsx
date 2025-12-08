@@ -26,16 +26,10 @@ import {
   WorkspaceMode
 } from './types'
 import { electronBridge } from '@/lib/electron'
-import {
-  mockAgentRewrite,
-  mockChatResponse,
-  mockParseDocument,
-  mockScreenshotFile,
-  mockTranslateContent
-} from '@/lib/mock-services'
+import { mockParseDocument, mockScreenshotFile, mockTranslateContent } from '@/lib/mock-services'
 import { testLlmConnection } from '@/lib/llm'
 import { parseFileWithMineru } from '@/lib/mineru'
-import { translateSegments, type SegmentTask } from '@/lib/translator'
+import { translateSegments, type SegmentTask, requestChatCompletion } from '@/lib/translator'
 
 type WorkspaceShellProps = {
   initialMode?: WorkspaceMode
@@ -55,13 +49,12 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const [processingStep, setProcessingStep] = useState({ label: '', percent: 0 })
   const [markdownOutput, setMarkdownOutput] = useState('')
   const [isExporting, setIsExporting] = useState(false)
-  const [history, setHistory] = useState<string[]>([''])
-  const [historyIndex, setHistoryIndex] = useState(0)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('prompts')
   const [resourceDir, setResourceDir] = useState<string | null>(null)
   const [showAgentInput, setShowAgentInput] = useState(false)
   const [agentQuery, setAgentQuery] = useState('')
+  const [agentHistory, setAgentHistory] = useState<ChatMessage[]>([])
   const [isAgentWorking, setIsAgentWorking] = useState(false)
   const [isSourceCollapsed, setIsSourceCollapsed] = useState(false)
   const [prompts, setPrompts] = useState<PromptConfig[]>(DEFAULT_PROMPTS)
@@ -200,27 +193,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   }, [openSettingsOnMount])
 
   const updateContent = (newContent: string) => {
-    const snapshot = history.slice(0, historyIndex + 1)
-    snapshot.push(newContent)
-    setHistory(snapshot)
-    setHistoryIndex(snapshot.length - 1)
     setMarkdownOutput(newContent)
-  }
-
-  const undo = () => {
-    if (historyIndex > 0) {
-      const nextIndex = historyIndex - 1
-      setHistoryIndex(nextIndex)
-      setMarkdownOutput(history[nextIndex])
-    }
-  }
-
-  const redo = () => {
-    if (historyIndex < history.length - 1) {
-      const nextIndex = historyIndex + 1
-      setHistoryIndex(nextIndex)
-      setMarkdownOutput(history[nextIndex])
-    }
   }
 
   const processTranslation = async (file: WorkspaceFile) => {
@@ -287,6 +260,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
           markdownBody
         ]
         updateContent(header.join('\n'))
+        setAgentHistory([])
         setProcessingStep({ label: '完成', percent: 100 })
       } else {
         setResourceDir(null)
@@ -304,6 +278,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
         await wait(600)
         setProcessingStep({ label: '完成', percent: 100 })
         updateContent(translation.markdown)
+        setAgentHistory([])
       }
       if (mode === 'full') {
         setIsSourceCollapsed(true)
@@ -359,33 +334,95 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
 
   const handleSendMessage = async () => {
     if (!inputContent.trim()) return
+    const llmConfig = llmConfigs.find(item => item.id === activeLlmId)
+    if (!llmConfig?.baseUrl || !llmConfig?.apiKey || !llmConfig?.model) {
+      alert('请先在“设置-大模型”中配置可用的模型')
+      return
+    }
+    const promptConfig = prompts.find(item => item.id === activePromptId)
+    const systemPrompt =
+      promptConfig?.content || '你是专业的语言助手，请用中文简洁回答用户问题。'
     const userMessage: ChatMessage = {
       id: makeId(),
       role: 'user',
       content: inputContent,
       createdAt: Date.now()
     }
+    const conversation = [...chatHistory, userMessage].slice(-10)
     appendChat(userMessage)
     setInputContent('')
-    const reply = await mockChatResponse(userMessage.content)
-    appendChat(reply)
-  }
-
-  const handleAgentModify = async () => {
-    if (!agentQuery.trim() || !markdownOutput) return
-    setIsAgentWorking(true)
-    const newContent = await mockAgentRewrite(agentQuery, markdownOutput)
-    updateContent(newContent)
-    setAgentQuery('')
-    setIsAgentWorking(false)
-  }
-
-  const handleCopy = async () => {
-    if (!markdownOutput) return
     try {
-      await navigator.clipboard.writeText(markdownOutput)
+      const messages = [
+        { role: 'system' as const, content: `${systemPrompt}\n保持回答凝练。` },
+        ...conversation.map(item => ({
+          role: item.role === 'user' ? ('user' as const) : ('assistant' as const),
+          content: item.content
+        }))
+      ]
+      const answer = await requestChatCompletion(llmConfig, messages, 0.4)
+      appendChat({
+        id: makeId(),
+        role: 'ai',
+        content: answer,
+        createdAt: Date.now()
+      })
     } catch (error) {
-      console.warn('复制失败', error)
+      appendChat({
+        id: makeId(),
+        role: 'ai',
+        content: error instanceof Error ? `回答失败：${error.message}` : '回答失败：未知错误',
+        createdAt: Date.now()
+      })
+    }
+  }
+
+  const handleAgentAsk = async () => {
+    if (!agentQuery.trim()) return
+    const llmConfig = llmConfigs.find(item => item.id === activeLlmId)
+    if (!llmConfig?.apiKey || !llmConfig?.baseUrl || !llmConfig?.model) {
+      alert('请先在“设置-大模型”中配置可用的模型')
+      return
+    }
+    setIsAgentWorking(true)
+    const question: ChatMessage = {
+      id: makeId(),
+      role: 'user',
+      content: agentQuery,
+      createdAt: Date.now()
+    }
+    setAgentHistory(prev => [...prev, question])
+    const promptConfig = prompts.find(item => item.id === activePromptId)
+    const qaPrompt =
+      promptConfig?.content ||
+      '你是专业的问答助手，请根据用户问题直接作答，无法回答时请说明原因。'
+    setAgentQuery('')
+    try {
+      const answer = await requestChatCompletion(
+        llmConfig,
+        [
+          { role: 'system', content: `${qaPrompt}\n保持答案简洁。` },
+          { role: 'user', content: question.content }
+        ],
+        0.2
+      )
+      const reply: ChatMessage = {
+        id: makeId(),
+        role: 'ai',
+        content: answer,
+        createdAt: Date.now()
+      }
+      setAgentHistory(prev => [...prev, reply])
+    } catch (error) {
+      console.warn('[workspace] agent QA failed', error)
+      const reply: ChatMessage = {
+        id: makeId(),
+        role: 'ai',
+        content: error instanceof Error ? `回答失败：${error.message}` : '回答失败：未知错误',
+        createdAt: Date.now()
+      }
+      setAgentHistory(prev => [...prev, reply])
+    } finally {
+      setIsAgentWorking(false)
     }
   }
 
@@ -519,8 +556,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const handleDeleteFile = () => {
     setFiles([])
     setMarkdownOutput('')
-    setHistory([''])
-    setHistoryIndex(0)
+    setAgentHistory([])
     setIsSourceCollapsed(false)
   }
 
@@ -560,9 +596,10 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
     onToggleAgentInput: setShowAgentInput,
     agentQuery,
     onAgentQueryChange: setAgentQuery,
-    onAgentSubmit: handleAgentModify,
+    onAgentSubmit: handleAgentAsk,
     isAgentWorking,
-    hasContent: Boolean(markdownOutput)
+    hasContent: Boolean(markdownOutput),
+    history: agentHistory
   }
 
   const settingsPromptProps = {
@@ -711,7 +748,13 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
           </div>
         </header>
         <div className="no-drag flex flex-1 overflow-hidden">
-          {mode === 'full' && <HistorySidebar items={historyItems} />}
+          {mode === 'full' && (
+            <HistorySidebar
+              items={historyItems}
+              onSelectFiles={handleFilesSelected}
+              onPasteScreenshot={handlePasteScreenshot}
+            />
+          )}
           <main className="relative flex flex-1 bg-white">
             {mode === 'mini' ? (
               <MiniChat
@@ -732,8 +775,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
                       processingPercent={processingStep.percent}
                       prompts={prompts}
                       activePromptId={activePromptId}
-      onPromptChange={setActivePromptId}
-                      onSelectFiles={handleFilesSelected}
+                      onPromptChange={setActivePromptId}
                       onDeleteFile={handleDeleteFile}
                       onReprocess={handleReprocess}
                       onPasteScreenshot={handlePasteScreenshot}
@@ -744,17 +786,15 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
                 <ResultPanel
                   markdownOutput={markdownOutput}
                   onContentChange={updateContent}
-                  historyIndex={historyIndex}
-                  historyLength={history.length}
-                  onUndo={undo}
-                  onRedo={redo}
-                  onCopy={handleCopy}
                   onExport={handleExport}
                   isExporting={isExporting}
                   agentProps={agentProps}
                   isSourceCollapsed={isSourceCollapsed}
                   onToggleSource={() => setIsSourceCollapsed(prev => !prev)}
                   charCount={markdownOutput.length}
+                  isProcessing={isProcessing}
+                  processingLabel={processingStep.label}
+                  processingPercent={processingStep.percent}
                 />
               </>
             )}

@@ -32,7 +32,20 @@ export async function translateSegments(
       const currentIndex = pointer++
       if (currentIndex >= segments.length) break
       const segment = segments[currentIndex]
-      const translated = await callChatCompletion(options.llm, segment.content, options.prompt, options.temperature)
+      const translated = await requestChatCompletion(
+        options.llm,
+        [
+          {
+            role: 'system',
+            content: (options.prompt && options.prompt.trim()) || DEFAULT_PROMPT
+          },
+          {
+            role: 'user',
+            content: segment.content
+          }
+        ],
+        options.temperature
+      )
       map.set(segment.id, translated)
       completed += 1
       options.onProgress?.(completed, segments.length)
@@ -44,10 +57,14 @@ export async function translateSegments(
   return map
 }
 
-async function callChatCompletion(
+export type ChatMessagePayload = {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+}
+
+export async function requestChatCompletion(
   llm: LlmConfig,
-  content: string,
-  prompt?: string,
+  messages: ChatMessagePayload[],
   temperature = 0.2
 ): Promise<string> {
   if (!llm?.baseUrl || !llm?.apiKey || !llm?.model) {
@@ -56,16 +73,7 @@ async function callChatCompletion(
   const body = {
     model: llm.model,
     temperature,
-    messages: [
-      {
-        role: 'system',
-        content: (prompt && prompt.trim()) || DEFAULT_PROMPT
-      },
-      {
-        role: 'user',
-        content
-      }
-    ]
+    messages
   }
   const response = await fetch(resolveChatCompletionUrl(llm.baseUrl), {
     method: 'POST',
