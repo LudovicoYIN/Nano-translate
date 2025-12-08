@@ -112,6 +112,26 @@ const llmStore = new Store<LlmStoreShape>({
   defaults: { llms: [], activeId: undefined }
 })
 
+type ParserConfigShape = {
+  parsers: { id: string; name: string; type: string; url: string; apiKey?: string }[]
+  activeId?: string
+}
+
+const parserStore = new Store<ParserConfigShape>({
+  name: 'parser-configs',
+  defaults: { parsers: [], activeId: undefined }
+})
+
+type PromptStoreShape = {
+  prompts: { id: string; name: string; content: string }[]
+  activeId?: string
+}
+
+const promptStore = new Store<PromptStoreShape>({
+  name: 'prompt-configs',
+  defaults: { prompts: [], activeId: undefined }
+})
+
 ipcMain.handle('get-llm-configs', () => {
   return llmStore.store
 })
@@ -135,4 +155,26 @@ ipcMain.handle('test-llm-connection', async (_event, payload: { baseUrl: string;
     throw new Error(`HTTP ${res.status}: ${text || res.statusText}`)
   }
   return Date.now() - start
+})
+
+ipcMain.handle('get-parser-configs', () => {
+  return parserStore.store
+})
+
+ipcMain.handle('set-parser-configs', (_event, payload: ParserConfigShape) => {
+  if (!payload || !Array.isArray(payload.parsers)) return false
+  parserStore.set('parsers', payload.parsers)
+  parserStore.set('activeId', payload.activeId)
+  return true
+})
+
+ipcMain.handle('get-prompt-configs', () => {
+  return promptStore.store
+})
+
+ipcMain.handle('set-prompt-configs', (_event, payload: PromptStoreShape) => {
+  if (!payload || !Array.isArray(payload.prompts)) return false
+  promptStore.set('prompts', payload.prompts)
+  promptStore.set('activeId', payload.activeId)
+  return true
 })

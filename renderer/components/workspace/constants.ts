@@ -42,14 +42,7 @@ export const DEFAULT_PARSERS: ParserConfig[] = [
     id: 'mineru-local',
     name: 'MinerU 本地服务',
     type: 'MinerU',
-    url: 'http://localhost:8000'
-  },
-  {
-    id: 'paddle-cloud',
-    name: 'PaddleOCR 云端',
-    type: 'PaddleOCR',
-    url: 'https://api.example.com/ocr',
-    apiKey: 'xyz-token'
+    url: ''
   }
 ]
 

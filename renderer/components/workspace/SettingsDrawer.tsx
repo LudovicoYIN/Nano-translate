@@ -454,8 +454,7 @@ function ParserSection({
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white"
               value={newParser.type}
               onChange={event => onChangeNewParser('type', event.target.value)}>
-              <option value="MinerU">MinerU (PDF 解析)</option>
-              <option value="PaddleOCR">PaddleOCR (通用 OCR)</option>
+              <option value="MinerU">MinerU（在线服务）</option>
             </select>
             <input
               className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"

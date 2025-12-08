@@ -62,6 +62,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const [isSourceCollapsed, setIsSourceCollapsed] = useState(false)
   const [prompts, setPrompts] = useState<PromptConfig[]>(DEFAULT_PROMPTS)
   const [activePromptId, setActivePromptId] = useState(prompts[0]?.id ?? 'general')
+  const [promptsLoaded, setPromptsLoaded] = useState(false)
   const [llmConfigs, setLlmConfigs] = useState<LlmConfig[]>(DEFAULT_LLMS)
   const [activeLlmId, setActiveLlmId] = useState(llmConfigs[0]?.id ?? '')
   const [llmLoaded, setLlmLoaded] = useState(false)
@@ -72,7 +73,8 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle')
   const [testingLlmId, setTestingLlmId] = useState<string | null>(null)
   const [parserConfigs, setParserConfigs] = useState<ParserConfig[]>(DEFAULT_PARSERS)
-  const [activeParserId, setActiveParserId] = useState(parserConfigs[0]?.id ?? 'mineru-local')
+  const [activeParserId, setActiveParserId] = useState(parserConfigs[0]?.id ?? '')
+  const [parserLoaded, setParserLoaded] = useState(false)
   const [newParser, setNewParser] = useState({ name: '', type: 'MinerU', url: '', apiKey: '' })
   const [showAddParser, setShowAddParser] = useState(false)
   const [historyItems] = useState(DEFAULT_HISTORY)
@@ -108,6 +110,41 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   }, [])
 
   useEffect(() => {
+    const loadPrompts = async () => {
+      if (electronBridge.getPromptConfigs) {
+        try {
+          const stored = await electronBridge.getPromptConfigs()
+          const list = Array.isArray((stored as any).prompts)
+            ? ((stored as any).prompts as PromptConfig[])
+            : []
+          const activeId = (stored as any).activeId as string | undefined
+          if (list.length) {
+            setPrompts(list)
+            setActivePromptId(activeId || list[0]?.id || '')
+            setPromptsLoaded(true)
+            return
+          }
+        } catch (error) {
+          console.warn('[workspace] load prompts failed, fallback to default', error)
+        }
+      }
+      setPrompts(DEFAULT_PROMPTS)
+      setActivePromptId(DEFAULT_PROMPTS[0]?.id ?? '')
+      setPromptsLoaded(true)
+    }
+    loadPrompts()
+  }, [])
+
+  useEffect(() => {
+    if (!promptsLoaded) return
+    if (electronBridge.setPromptConfigs) {
+      electronBridge
+        .setPromptConfigs({ prompts, activeId: activePromptId })
+        .catch(error => console.warn('[workspace] persist prompts failed', error))
+    }
+  }, [prompts, activePromptId, promptsLoaded])
+
+  useEffect(() => {
     if (!llmLoaded) return
     if (electronBridge.setLlmConfigs) {
       electronBridge
@@ -115,6 +152,41 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
         .catch(error => console.warn('[workspace] persist llm configs failed', error))
     }
   }, [llmConfigs, activeLlmId, llmLoaded])
+
+  useEffect(() => {
+    const loadParserConfigs = async () => {
+      if (electronBridge.getParserConfigs) {
+        try {
+          const stored = await electronBridge.getParserConfigs()
+          const list = Array.isArray((stored as any).parsers)
+            ? ((stored as any).parsers as ParserConfig[])
+            : []
+          const activeId = (stored as any).activeId as string | undefined
+          if (list.length) {
+            setParserConfigs(list)
+            setActiveParserId(activeId || list[0]?.id || '')
+            setParserLoaded(true)
+            return
+          }
+        } catch (error) {
+          console.warn('[workspace] load parser configs failed, fallback to default', error)
+        }
+      }
+      setParserConfigs(DEFAULT_PARSERS)
+      setActiveParserId(DEFAULT_PARSERS[0]?.id ?? '')
+      setParserLoaded(true)
+    }
+    loadParserConfigs()
+  }, [])
+
+  useEffect(() => {
+    if (!parserLoaded) return
+    if (electronBridge.setParserConfigs) {
+      electronBridge
+        .setParserConfigs({ parsers: parserConfigs, activeId: activeParserId })
+        .catch(error => console.warn('[workspace] persist parser configs failed', error))
+    }
+  }, [parserConfigs, activeParserId, parserLoaded])
 
   useEffect(() => {
     if (openSettingsOnMount) {
@@ -320,7 +392,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   }
 
   const handleAddParser = () => {
-    if (!newParser.name || !newParser.url) return
+    if (!newParser.name) return
     const parser: ParserConfig = {
       id: makeId(),
       name: newParser.name,

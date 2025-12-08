@@ -496,8 +496,7 @@ export default function App() {
                                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
                                     value={newParser.type} onChange={e => setNewParser({...newParser, type: e.target.value})}
                                  >
-                                    <option value="MinerU">MinerU (PDF解析)</option>
-                                    <option value="PaddleOCR">PaddleOCR (通用OCR)</option>
+                                    <option value="MinerU">MinerU</option>
                                  </select>
                               </div>
                               <input 

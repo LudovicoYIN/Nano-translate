@@ -5,6 +5,10 @@ type ElectronBridge = {
   getLlmConfigs?: () => Promise<{ llms: unknown; activeId?: string }>
   setLlmConfigs?: (payload: { llms: unknown; activeId?: string }) => Promise<void>
   testLlmConnection?: (payload: { baseUrl: string; apiKey: string }) => Promise<number>
+  getParserConfigs?: () => Promise<{ parsers: unknown; activeId?: string }>
+  setParserConfigs?: (payload: { parsers: unknown; activeId?: string }) => Promise<void>
+  getPromptConfigs?: () => Promise<{ prompts: unknown; activeId?: string }>
+  setPromptConfigs?: (payload: { prompts: unknown; activeId?: string }) => Promise<void>
 }
 
 declare global {
@@ -50,6 +54,12 @@ export const electronBridge: ElectronBridge = hasWindow && window.electron?.invo
       getLlmConfigs: () =>
         window.electron!.invoke!('get-llm-configs').then(result => result as { llms: unknown; activeId?: string }),
       setLlmConfigs: payload => window.electron!.invoke!('set-llm-configs', payload).then(() => {}),
-      testLlmConnection: payload => window.electron!.invoke!('test-llm-connection', payload).then(Number)
+      testLlmConnection: payload => window.electron!.invoke!('test-llm-connection', payload).then(Number),
+      getParserConfigs: () =>
+        window.electron!.invoke!('get-parser-configs').then(result => result as { parsers: unknown; activeId?: string }),
+      setParserConfigs: payload => window.electron!.invoke!('set-parser-configs', payload).then(() => {}),
+      getPromptConfigs: () =>
+        window.electron!.invoke!('get-prompt-configs').then(result => result as { prompts: unknown; activeId?: string }),
+      setPromptConfigs: payload => window.electron!.invoke!('set-prompt-configs', payload).then(() => {})
     }
   : fallbackBridge
