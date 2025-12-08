@@ -1,10 +1,15 @@
 import path from 'path'
 import fs from 'fs/promises'
+import os from 'os'
+import { execFile } from 'child_process'
+import { promisify } from 'util'
 import { app, ipcMain, BrowserWindow, dialog } from 'electron'
 import serve from 'electron-serve'
 import { createWindow } from './helpers'
 import Store from 'electron-store'
 import extract from 'extract-zip'
+
+const execFileAsync = promisify(execFile)
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -129,6 +134,8 @@ type PromptStoreShape = {
   activeId?: string
 }
 
+type ExportFormat = 'markdown' | 'pdf' | 'docx'
+
 const promptStore = new Store<PromptStoreShape>({
   name: 'prompt-configs',
   defaults: { prompts: [], activeId: undefined }
@@ -182,6 +189,101 @@ ipcMain.handle('set-prompt-configs', (_event, payload: PromptStoreShape) => {
 })
 
 const sanitizeSegment = (input: string) => input.replace(/[^a-zA-Z0-9._-]/g, '-')
+
+const getResourcePath = (...segments: string[]) => {
+  if (isProd) {
+    return path.join(process.resourcesPath, ...segments)
+  }
+  return path.join(__dirname, '..', 'resources', ...segments)
+}
+
+const resolvePandocBinary = async () => {
+  let subPath: string[] | null = null
+  if (process.platform === 'darwin') {
+    subPath = ['pandoc', 'mac', 'pandoc']
+  } else if (process.platform === 'win32') {
+    subPath = ['pandoc', 'win', 'pandoc.exe']
+  }
+  if (!subPath) {
+    throw new Error('当前系统暂未内置 Pandoc，无法导出该格式')
+  }
+  const candidate = getResourcePath(...subPath)
+  await fs.access(candidate).catch(() => {
+    throw new Error(`未找到 Pandoc 可执行文件：${candidate}`)
+  })
+  return candidate
+}
+
+const runPandocExport = async (
+  markdown: string,
+  target: 'pdf' | 'docx' | 'html',
+  outputPath: string,
+  options?: { resourceDir?: string | null; extraArgs?: string[] }
+) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nano-pandoc-'))
+  const inputPath = path.join(tempDir, 'source.md')
+  await fs.writeFile(inputPath, markdown, 'utf-8')
+  const pandocPath = await resolvePandocBinary()
+  const args = [
+    inputPath,
+    '--from',
+    'markdown',
+    '--standalone',
+    '--to',
+    target,
+    '--output',
+    outputPath
+  ]
+  if (options?.resourceDir) {
+    args.push('--resource-path', options.resourceDir)
+  }
+  if (options?.extraArgs?.length) {
+    args.push(...options.extraArgs)
+  }
+  try {
+    await execFileAsync(pandocPath, args)
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+const convertMarkdownToHtmlFile = async (markdown: string, resourceDir?: string | null) => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'nano-pandoc-html-'))
+  const outputPath = path.join(tempDir, 'output.html')
+  await runPandocExport(markdown, 'html', outputPath, {
+    resourceDir: resourceDir || undefined,
+    extraArgs: ['--self-contained']
+  })
+  return {
+    htmlPath: outputPath,
+    cleanup: () => fs.rm(tempDir, { recursive: true, force: true }).catch(() => {})
+  }
+}
+
+const exportPdfWithBrowser = async (markdown: string, outputPath: string, resourceDir?: string | null) => {
+  if (!app.isReady()) {
+    await app.whenReady()
+  }
+  const { htmlPath, cleanup } = await convertMarkdownToHtmlFile(markdown, resourceDir)
+  const pdfWindow = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      sandbox: false,
+      webSecurity: false
+    }
+  })
+  try {
+    await pdfWindow.loadURL(`file://${htmlPath}`)
+    const pdfBuffer = await pdfWindow.webContents.printToPDF({
+      pageSize: 'A4',
+      printBackground: true
+    })
+    await fs.writeFile(outputPath, pdfBuffer)
+  } finally {
+    pdfWindow.close()
+    await cleanup()
+  }
+}
 
 ipcMain.handle(
   'mineru-download-unzip',
@@ -254,3 +356,48 @@ ipcMain.handle('read-local-file', async (_event, filePath: string) => {
   const data = await fs.readFile(filePath, 'utf-8')
   return data
 })
+
+ipcMain.handle(
+  'export-document',
+  async (
+    _event,
+    payload: { markdown: string; format?: ExportFormat; defaultFileName?: string; resourceDir?: string | null }
+  ) => {
+    if (!payload?.markdown) {
+      throw new Error('缺少待导出的 Markdown 内容')
+    }
+    const format: ExportFormat = payload.format ?? 'markdown'
+    const extMap: Record<ExportFormat, { ext: string; label: string }> = {
+      markdown: { ext: 'md', label: 'Markdown 文本' },
+      docx: { ext: 'docx', label: 'Word 文档' },
+      pdf: { ext: 'pdf', label: 'PDF 文档' }
+    }
+    const defaultBaseName = (payload.defaultFileName || 'translation').replace(/\.[^/.]+$/, '')
+    const sanitizedDefaultName = defaultBaseName.replace(/[\\/:*?"<>|]/g, '').trim() || 'translation'
+    const { ext, label } = extMap[format]
+    const defaultPath = path.join(app.getPath('documents'), `${sanitizedDefaultName}.${ext}`)
+    const saveResult = await dialog.showSaveDialog({
+      title: `导出 ${label}`,
+      defaultPath,
+      filters: [{ name: label, extensions: [ext] }]
+    })
+    if (saveResult.canceled || !saveResult.filePath) {
+      return { canceled: true }
+    }
+    try {
+      if (format === 'markdown') {
+        await fs.writeFile(saveResult.filePath, payload.markdown, 'utf-8')
+      } else if (format === 'docx') {
+        await runPandocExport(payload.markdown, 'docx', saveResult.filePath, {
+          resourceDir: payload.resourceDir
+        })
+      } else if (format === 'pdf') {
+        await exportPdfWithBrowser(payload.markdown, saveResult.filePath, payload.resourceDir)
+      }
+      return { success: true, filePath: saveResult.filePath }
+    } catch (error) {
+      console.error('[export-document] failed', error)
+      throw error
+    }
+  }
+)

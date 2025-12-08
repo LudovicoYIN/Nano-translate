@@ -24,18 +24,6 @@ type BatchExtractResponse = {
   extract_result: ExtractResultItem[]
 }
 
-const resolveMarkdownImages = (markdown: string, baseDir: string) => {
-  const base = `file://${baseDir.replace(/\\/g, '/')}/`
-  return markdown.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, src) => {
-    if (!src || /^(https?:|data:|file:|blob:)/i.test(src)) {
-      return _match
-    }
-    const normalized = src.replace(/^\.\//, '')
-    const url = new URL(normalized, base).toString()
-    return `![${alt}](${url})`
-  })
-}
-
 export type MineruParseResult = {
   batchId: string
   fileName: string
@@ -214,8 +202,7 @@ export async function parseFileWithMineru(
   const fullMdPath = `${unzipInfo.extractDir.replace(/\/+$/, '')}/full.md`
   if (electronBridge.readLocalFile) {
     try {
-      const raw = await electronBridge.readLocalFile(fullMdPath)
-      fullMdContent = resolveMarkdownImages(raw, unzipInfo.extractDir)
+      fullMdContent = await electronBridge.readLocalFile(fullMdPath)
     } catch (error) {
       console.warn('[mineru] read full.md failed', error)
     }

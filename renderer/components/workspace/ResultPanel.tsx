@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import {
   Bot,
   Check,
@@ -34,7 +35,8 @@ type ResultPanelProps = {
   onUndo: () => void
   onRedo: () => void
   onCopy: () => void
-  onExport: () => void
+  onExport: (format: 'pdf' | 'docx' | 'markdown') => void
+  isExporting: boolean
   agentProps: AgentProps
   isSourceCollapsed: boolean
   onToggleSource: () => void
@@ -50,11 +52,15 @@ export function ResultPanel({
   onRedo,
   onCopy,
   onExport,
+  isExporting,
   agentProps,
   isSourceCollapsed,
   onToggleSource,
   charCount
 }: ResultPanelProps) {
+  const [exportFormat, setExportFormat] = useState<'pdf' | 'docx' | 'markdown'>('pdf')
+  const exportDisabled = !markdownOutput || isExporting
+
   return (
     <div className="relative flex flex-1 flex-col bg-white">
       <button
@@ -91,11 +97,23 @@ export function ResultPanel({
             title="复制">
             <Copy size={18} />
           </button>
-          <button
-            className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 hover:shadow-md"
-            onClick={onExport}>
-            <Download size={16} /> 导出 PDF
-          </button>
+          <div className="flex items-center gap-2">
+            <select
+              value={exportFormat}
+              onChange={event => setExportFormat(event.target.value as 'pdf' | 'docx' | 'markdown')}
+              className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition focus:border-blue-400 focus:outline-none disabled:opacity-50"
+              disabled={!markdownOutput || isExporting}>
+              <option value="pdf">PDF</option>
+              <option value="docx">Word</option>
+              <option value="markdown">Markdown</option>
+            </select>
+            <button
+              className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => onExport(exportFormat)}
+              disabled={exportDisabled}>
+              {isExporting ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />} 导出
+            </button>
+          </div>
         </div>
       </div>
       <div className="relative flex-1">

@@ -53,10 +53,12 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingStep, setProcessingStep] = useState({ label: '', percent: 0 })
   const [markdownOutput, setMarkdownOutput] = useState('')
+  const [isExporting, setIsExporting] = useState(false)
   const [history, setHistory] = useState<string[]>([''])
   const [historyIndex, setHistoryIndex] = useState(0)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('prompts')
+  const [resourceDir, setResourceDir] = useState<string | null>(null)
   const [showAgentInput, setShowAgentInput] = useState(false)
   const [agentQuery, setAgentQuery] = useState('')
   const [isAgentWorking, setIsAgentWorking] = useState(false)
@@ -232,6 +234,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
         console.info('[workspace] mineru start', parser.url, parser.name)
         const parseResult = await parseFileWithMineru(file.file, parser, step => setProcessingStep(step))
         console.info('[workspace] mineru done', parseResult)
+        setResourceDir(parseResult.extractDir)
         const header = [
           '# MinerU 解析完成',
           `- 文件：${parseResult.fileName}`,
@@ -250,6 +253,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
               ].join('\n')
         )
       } else {
+        setResourceDir(null)
         await wait(600)
         const parsed = await mockParseDocument(file)
         setProcessingStep({ label: '正在解析文档结构...', percent: 35 })
@@ -349,15 +353,39 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
     }
   }
 
-  const handleExport = () => {
-    if (!markdownOutput) return
-    const blob = new Blob([markdownOutput], { type: 'text/markdown' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = 'translation.md'
-    link.click()
-    URL.revokeObjectURL(url)
+  type ExportFormat = 'markdown' | 'docx' | 'pdf'
+
+  const handleExport = async (format: ExportFormat) => {
+    if (!markdownOutput || isExporting) return
+    setIsExporting(true)
+    const defaultFileName = files[0]?.name || 'translation.md'
+    try {
+      if (electronBridge.exportDocument) {
+        await electronBridge.exportDocument({
+          markdown: markdownOutput,
+          format,
+          defaultFileName,
+          resourceDir: resourceDir ?? undefined
+        })
+        return
+      }
+      if (format === 'markdown') {
+        const blob = new Blob([markdownOutput], { type: 'text/markdown' })
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = defaultFileName.endsWith('.md') ? defaultFileName : `${defaultFileName}.md`
+        link.click()
+        URL.revokeObjectURL(url)
+        return
+      }
+      alert('当前环境暂不支持该格式导出，请使用桌面版应用。')
+    } catch (error) {
+      console.warn('[workspace] export failed', error)
+      alert(`导出失败：${error instanceof Error ? error.message : '未知错误'}`)
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   const handleAddPrompt = () => {
@@ -686,6 +714,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
                   onRedo={redo}
                   onCopy={handleCopy}
                   onExport={handleExport}
+                  isExporting={isExporting}
                   agentProps={agentProps}
                   isSourceCollapsed={isSourceCollapsed}
                   onToggleSource={() => setIsSourceCollapsed(prev => !prev)}

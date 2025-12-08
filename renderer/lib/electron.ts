@@ -9,6 +9,12 @@ type ElectronBridge = {
   setParserConfigs?: (payload: { parsers: unknown; activeId?: string }) => Promise<void>
   getPromptConfigs?: () => Promise<{ prompts: unknown; activeId?: string }>
   setPromptConfigs?: (payload: { prompts: unknown; activeId?: string }) => Promise<void>
+  exportDocument?: (payload: {
+    markdown: string
+    format: 'markdown' | 'docx' | 'pdf'
+    defaultFileName?: string
+    resourceDir?: string
+  }) => Promise<{ success?: boolean; filePath?: string; canceled?: boolean }>
   mineruDownloadAndUnzip?: (payload: { zipUrl: string; batchId: string; fileName: string }) => Promise<{
     extractDir: string
     zipPath?: string
@@ -73,6 +79,10 @@ export const electronBridge: ElectronBridge = hasWindow && window.electron?.invo
       getPromptConfigs: () =>
         window.electron!.invoke!('get-prompt-configs').then(result => result as { prompts: unknown; activeId?: string }),
       setPromptConfigs: payload => window.electron!.invoke!('set-prompt-configs', payload).then(() => {}),
+      exportDocument: payload =>
+        window.electron!.invoke!('export-document', payload).then(
+          result => result as { success?: boolean; filePath?: string; canceled?: boolean }
+        ),
       mineruDownloadAndUnzip: payload =>
         window.electron!.invoke!('mineru-download-unzip', payload).then(result => result as { extractDir: string; zipPath?: string }),
       mineruApiRequest: payload =>
