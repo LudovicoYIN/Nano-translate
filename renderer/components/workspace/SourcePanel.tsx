@@ -12,7 +12,7 @@ type SourcePanelProps = {
   prompts: PromptConfig[]
   activePromptId: string
   onPromptChange: (id: string) => void
-  onUpload: (event: ChangeEvent<HTMLInputElement>) => void
+  onSelectFiles: (files: FileList | File[]) => void
   onDeleteFile: () => void
   onReprocess: () => void
   onPasteScreenshot: () => void
@@ -27,7 +27,7 @@ export function SourcePanel({
   prompts,
   activePromptId,
   onPromptChange,
-  onUpload,
+  onSelectFiles,
   onDeleteFile,
   onReprocess,
   onPasteScreenshot,
@@ -89,13 +89,26 @@ export function SourcePanel({
           )}
         </div>
       ) : (
-        <label className="group flex h-full w-full flex-1 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-white text-slate-400 transition-all hover:border-blue-400 hover:bg-blue-50/30">
+        <label
+          className="group flex h-full w-full flex-1 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-white text-slate-400 transition-all hover:border-blue-400 hover:bg-blue-50/30"
+          onDragOver={event => {
+            event.preventDefault()
+          }}
+          onDrop={event => {
+            event.preventDefault()
+            if (event.dataTransfer?.files?.length) {
+              onSelectFiles(event.dataTransfer.files)
+            }
+          }}>
           <input
             id="workspace-upload"
             type="file"
             className="hidden"
             accept=".pdf,.docx,.jpg,.jpeg,.png"
-            onChange={onUpload}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => {
+              onSelectFiles(event.target.files ?? [])
+              event.target.value = ''
+            }}
           />
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 transition-transform group-hover:scale-110">
             <Upload className="text-slate-400 group-hover:text-blue-500" size={32} />

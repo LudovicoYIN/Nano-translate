@@ -434,3 +434,14 @@ A0211	Token 过期	更换新 Token
 -60014	删除运行中的任务	运行中的任务暂不支持删除
 -60015	文件转换失败	可以手动转为pdf再上传
 -60016	文件转换失败	文件转换为指定格式失败，可以尝试其他格式导出或重试
+
+
+解压输出：在解压目录 /home/luke/.config/boilerplate-nextron-shadcn (development)/mineru/b3c7d9f0-49b7-4c95-a900-8e264beb993f/2307.07415v2.pdf/ 下的内容含义：
+
+full.md：MinerU 生成的整篇 Markdown，正文可直接送翻译/对齐。
+images/：Markdown 引用的图片资源（文件名为 hash），渲染/导出时需要保持相对路径。
+layout.json：版面/页坐标信息，可用于更精细的分块或对齐。
+*_content_list.json：段落/块的结构化列表（含顺序、类型、bbox、可能的文本），如果想分段翻译可用它来切块。
+*_model.json：模型元数据/识别信息（通常可忽略）。
+*_origin.pdf：原始 PDF 备份。
+result.zip：源压缩包。

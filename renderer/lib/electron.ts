@@ -9,6 +9,18 @@ type ElectronBridge = {
   setParserConfigs?: (payload: { parsers: unknown; activeId?: string }) => Promise<void>
   getPromptConfigs?: () => Promise<{ prompts: unknown; activeId?: string }>
   setPromptConfigs?: (payload: { prompts: unknown; activeId?: string }) => Promise<void>
+  mineruDownloadAndUnzip?: (payload: { zipUrl: string; batchId: string; fileName: string }) => Promise<{
+    extractDir: string
+    zipPath?: string
+  }>
+  mineruApiRequest?: (payload: {
+    url: string
+    method?: 'GET' | 'POST' | 'PUT'
+    headers?: Record<string, string>
+    body?: ArrayBuffer | Uint8Array | string | Record<string, unknown> | null
+    responseType?: 'json' | 'text'
+  }) => Promise<{ status: number; ok: boolean; data?: unknown; text?: string }>
+  readLocalFile?: (filePath: string) => Promise<string>
 }
 
 declare global {
@@ -60,6 +72,11 @@ export const electronBridge: ElectronBridge = hasWindow && window.electron?.invo
       setParserConfigs: payload => window.electron!.invoke!('set-parser-configs', payload).then(() => {}),
       getPromptConfigs: () =>
         window.electron!.invoke!('get-prompt-configs').then(result => result as { prompts: unknown; activeId?: string }),
-      setPromptConfigs: payload => window.electron!.invoke!('set-prompt-configs', payload).then(() => {})
+      setPromptConfigs: payload => window.electron!.invoke!('set-prompt-configs', payload).then(() => {}),
+      mineruDownloadAndUnzip: payload =>
+        window.electron!.invoke!('mineru-download-unzip', payload).then(result => result as { extractDir: string; zipPath?: string }),
+      mineruApiRequest: payload =>
+        window.electron!.invoke!('mineru-api-request', payload).then(result => result as { status: number; ok: boolean; data?: unknown; text?: string }),
+      readLocalFile: filePath => window.electron!.invoke!('read-local-file', filePath).then(String)
     }
   : fallbackBridge

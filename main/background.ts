@@ -1,8 +1,10 @@
 import path from 'path'
+import fs from 'fs/promises'
 import { app, ipcMain, BrowserWindow, dialog } from 'electron'
 import serve from 'electron-serve'
 import { createWindow } from './helpers'
 import Store from 'electron-store'
+import extract from 'extract-zip'
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -177,4 +179,78 @@ ipcMain.handle('set-prompt-configs', (_event, payload: PromptStoreShape) => {
   promptStore.set('prompts', payload.prompts)
   promptStore.set('activeId', payload.activeId)
   return true
+})
+
+const sanitizeSegment = (input: string) => input.replace(/[^a-zA-Z0-9._-]/g, '-')
+
+ipcMain.handle(
+  'mineru-download-unzip',
+  async (_event, payload: { zipUrl: string; batchId: string; fileName: string }) => {
+    if (!payload?.zipUrl) {
+      throw new Error('zipUrl is required')
+    }
+    const batchId = sanitizeSegment(payload.batchId || 'unknown')
+    const fileName = sanitizeSegment(payload.fileName || 'result')
+    const userDir = app.getPath('userData')
+    const targetDir = path.join(userDir, 'mineru', batchId, fileName)
+    await fs.mkdir(targetDir, { recursive: true })
+    const zipPath = path.join(targetDir, 'result.zip')
+    const res = await fetch(payload.zipUrl)
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`下载 MinerU 结果失败：HTTP ${res.status} ${text || res.statusText}`)
+    }
+    const buffer = Buffer.from(await res.arrayBuffer())
+    await fs.writeFile(zipPath, buffer)
+    await extract(zipPath, { dir: targetDir })
+    return { extractDir: targetDir, zipPath }
+  }
+)
+
+ipcMain.handle(
+  'mineru-api-request',
+  async (
+    _event,
+    payload: {
+      url: string
+      method?: 'GET' | 'POST' | 'PUT'
+      headers?: Record<string, string>
+      body?: ArrayBuffer | Uint8Array | string | Record<string, unknown> | null
+      responseType?: 'json' | 'text'
+    }
+  ) => {
+    if (!payload?.url) throw new Error('url is required')
+    const method = payload.method || 'GET'
+    const headers = payload.headers || {}
+    let body: BodyInit | undefined
+    if (method !== 'GET' && payload.body !== undefined && payload.body !== null) {
+      if (payload.body instanceof ArrayBuffer || payload.body instanceof Uint8Array) {
+        body = Buffer.from(payload.body)
+      } else if (typeof payload.body === 'string') {
+        body = payload.body
+      } else {
+        body = JSON.stringify(payload.body)
+        headers['Content-Type'] = headers['Content-Type'] || 'application/json'
+      }
+    }
+    const res = await fetch(payload.url, { method, headers, body })
+    const responseType = payload.responseType || 'json'
+    let data: unknown
+    let text: string | undefined
+    if (responseType === 'json') {
+      data = await res.json().catch(() => undefined)
+    } else {
+      text = await res.text().catch(() => undefined)
+    }
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${text || res.statusText}`)
+    }
+    return { status: res.status, ok: res.ok, data, text }
+  }
+)
+
+ipcMain.handle('read-local-file', async (_event, filePath: string) => {
+  if (!filePath) throw new Error('filePath is required')
+  const data = await fs.readFile(filePath, 'utf-8')
+  return data
 })

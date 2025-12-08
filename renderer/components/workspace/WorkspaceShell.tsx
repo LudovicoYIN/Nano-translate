@@ -1,7 +1,7 @@
 /* eslint-disable no-alert */
 'use client'
 
-import { useEffect, useMemo, useRef, useState, ChangeEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Languages, Settings, Minimize2, Maximize2, Monitor } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { HistorySidebar } from './HistorySidebar'
@@ -34,6 +34,7 @@ import {
   mockTranslateContent
 } from '@/lib/mock-services'
 import { testLlmConnection } from '@/lib/llm'
+import { parseFileWithMineru } from '@/lib/mineru'
 
 type WorkspaceShellProps = {
   initialMode?: WorkspaceMode
@@ -222,36 +223,71 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const processTranslation = async (file: WorkspaceFile) => {
     setIsProcessing(true)
     setProcessingStep({ label: '正在读取文件...', percent: 5 })
-    await wait(600)
-    const parsed = await mockParseDocument(file)
-    setProcessingStep({ label: '正在解析文档结构...', percent: 35 })
-    await wait(900)
-    setProcessingStep({ label: '正在进行 AI 推理...', percent: 70 })
-    const translation = await mockTranslateContent({
-      parserId: activeParserId,
-      llmId: activeLlmId,
-      promptId: activePromptId,
-      content: parsed.content
-    })
-    await wait(600)
-    setProcessingStep({ label: '完成', percent: 100 })
-    updateContent(translation.markdown)
-    setIsProcessing(false)
-    if (mode === 'full') {
-      setIsSourceCollapsed(true)
-    } else {
-      appendChat({
-        id: makeId(),
-        role: 'ai',
-        content: `文件 �?{file.name}�?处理完成！`,
-        createdAt: Date.now()
-      })
+    try {
+      const parser = parserConfigs.find(item => item.id === activeParserId)
+      if (parser?.type === 'MinerU') {
+        if (!file.file) {
+          throw new Error('当前未拿到上传的文件对象，无法调用 MinerU。请使用上传/拖拽方式。')
+        }
+        console.info('[workspace] mineru start', parser.url, parser.name)
+        const parseResult = await parseFileWithMineru(file.file, parser, step => setProcessingStep(step))
+        console.info('[workspace] mineru done', parseResult)
+        const header = [
+          '# MinerU 解析完成',
+          `- 文件：${parseResult.fileName}`,
+          `- Batch ID：${parseResult.batchId}`,
+          `- ZIP 下载：${parseResult.fullZipUrl}`,
+          `- 解压目录：${parseResult.extractDir}`,
+          parseResult.fullMdPath ? `- full.md：${parseResult.fullMdPath}` : '',
+          ''
+        ].filter(Boolean)
+        updateContent(
+          parseResult.fullMdContent
+            ? `${header.join('\n')}${parseResult.fullMdContent}`
+            : [
+                ...header,
+                '未能读取 full.md，请手动检查解压目录中的内容。'
+              ].join('\n')
+        )
+      } else {
+        await wait(600)
+        const parsed = await mockParseDocument(file)
+        setProcessingStep({ label: '正在解析文档结构...', percent: 35 })
+        await wait(900)
+        setProcessingStep({ label: '正在进行 AI 推理...', percent: 70 })
+        const translation = await mockTranslateContent({
+          parserId: activeParserId,
+          llmId: activeLlmId,
+          promptId: activePromptId,
+          content: parsed.content
+        })
+        await wait(600)
+        setProcessingStep({ label: '完成', percent: 100 })
+        updateContent(translation.markdown)
+      }
+      if (mode === 'full') {
+        setIsSourceCollapsed(true)
+      } else {
+        appendChat({
+          id: makeId(),
+          role: 'ai',
+          content: `文件 ${file.name} 处理完成！`,
+          createdAt: Date.now()
+        })
+      }
+    } catch (error) {
+      console.error('[workspace] 解析失败', error)
+      setProcessingStep({ label: '解析失败', percent: 100 })
+      updateContent(`解析失败：${error instanceof Error ? error.message : '未知错误'}`)
+    } finally {
+      setIsProcessing(false)
     }
   }
 
-  const handleFileUpload = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
+  const handleFilesSelected = (files: FileList | File[]) => {
+    const file = Array.from(files ?? [])[0]
     if (!file) return
+    console.info('[workspace] selected file', file.name, file.size)
     const workspaceFile: WorkspaceFile = {
       id: makeId(),
       name: file.name,
@@ -632,8 +668,8 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
                       processingPercent={processingStep.percent}
                       prompts={prompts}
                       activePromptId={activePromptId}
-                      onPromptChange={setActivePromptId}
-                      onUpload={handleFileUpload}
+      onPromptChange={setActivePromptId}
+                      onSelectFiles={handleFilesSelected}
                       onDeleteFile={handleDeleteFile}
                       onReprocess={handleReprocess}
                       onPasteScreenshot={handlePasteScreenshot}
