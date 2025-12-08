@@ -35,6 +35,7 @@ import {
 } from '@/lib/mock-services'
 import { testLlmConnection } from '@/lib/llm'
 import { parseFileWithMineru } from '@/lib/mineru'
+import { translateSegments, type SegmentTask } from '@/lib/translator'
 
 type WorkspaceShellProps = {
   initialMode?: WorkspaceMode
@@ -235,7 +236,9 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
         const parseResult = await parseFileWithMineru(file.file, parser, step => setProcessingStep(step))
         console.info('[workspace] mineru done', parseResult)
         setResourceDir(parseResult.extractDir)
-        const header = [
+        const llmConfig = llmConfigs.find(item => item.id === activeLlmId)
+        const promptConfig = prompts.find(item => item.id === activePromptId)
+        const headerLines = [
           '# MinerU 解析完成',
           `- 文件：${parseResult.fileName}`,
           `- Batch ID：${parseResult.batchId}`,
@@ -244,14 +247,47 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
           parseResult.fullMdPath ? `- full.md：${parseResult.fullMdPath}` : '',
           ''
         ].filter(Boolean)
-        updateContent(
-          parseResult.fullMdContent
-            ? `${header.join('\n')}${parseResult.fullMdContent}`
-            : [
-                ...header,
-                '未能读取 full.md，请手动检查解压目录中的内容。'
-              ].join('\n')
-        )
+        const canTranslate =
+          !!llmConfig?.apiKey &&
+          !!llmConfig?.baseUrl &&
+          !!llmConfig?.model &&
+          !!promptConfig?.content &&
+          !!electronBridge.readDir &&
+          !!electronBridge.readLocalFile
+
+        let translatedMarkdown: string | null = null
+        if (canTranslate) {
+          try {
+            setProcessingStep({ label: '解析完成，准备翻译...', percent: 87 })
+            translatedMarkdown = await translateMineruContentList({
+              extractDir: parseResult.extractDir,
+              llm: llmConfig!,
+              prompt: promptConfig!.content,
+              onProgress: (done, total) => {
+                const percent = 87 + Math.round((done / Math.max(total, 1)) * 12)
+                setProcessingStep({
+                  label: `大模型翻译中 (${done}/${total})...`,
+                  percent: Math.min(percent, 99)
+                })
+              }
+            })
+          } catch (error) {
+            console.warn('[workspace] translate content_list failed', error)
+          }
+        } else {
+          console.info('[workspace] skip translation：配置不完整或缺少读写能力')
+        }
+
+        const markdownBody =
+          translatedMarkdown ??
+          (parseResult.fullMdContent ||
+            '未能读取 full.md，请手动检查解压目录中的内容。')
+        const header = [
+          ...headerLines,
+          markdownBody
+        ]
+        updateContent(header.join('\n'))
+        setProcessingStep({ label: '完成', percent: 100 })
       } else {
         setResourceDir(null)
         await wait(600)
@@ -727,4 +763,136 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
       </div>
     </div>
   )
+}
+
+type MineruContentListItem = {
+  type?: string
+  text?: string
+  text_format?: string
+  img_path?: string
+  image_caption?: string[]
+}
+
+type TranslateContentListParams = {
+  extractDir: string
+  llm: LlmConfig
+  prompt: string
+  onProgress?: (done: number, total: number) => void
+}
+
+async function translateMineruContentList({
+  extractDir,
+  llm,
+  prompt,
+  onProgress
+}: TranslateContentListParams): Promise<string | null> {
+  if (!electronBridge.readDir || !electronBridge.readLocalFile) {
+    return null
+  }
+  const entries = await electronBridge.readDir(extractDir).catch(() => [])
+  const target = entries.find(name => name.endsWith('_content_list.json'))
+  if (!target) {
+    return null
+  }
+  const filePath = joinLocalPath(extractDir, target)
+  let contentListRaw: string
+  try {
+    contentListRaw = await electronBridge.readLocalFile(filePath)
+  } catch (error) {
+    console.warn('[workspace] read content_list failed', error)
+    return null
+  }
+  let items: MineruContentListItem[]
+  try {
+    const parsed = JSON.parse(contentListRaw)
+    if (!Array.isArray(parsed)) return null
+    items = parsed
+  } catch (error) {
+    console.warn('[workspace] parse content_list json failed', error)
+    return null
+  }
+  const segments = collectTranslatableSegments(items)
+  if (!segments.length) {
+    return null
+  }
+  const translations = await translateSegments(segments, {
+    llm,
+    prompt,
+    concurrency: 5,
+    onProgress
+  })
+  return buildMarkdownFromContentList(items, translations)
+}
+
+function collectTranslatableSegments(items: MineruContentListItem[]): SegmentTask[] {
+  const segments: SegmentTask[] = []
+  items.forEach((item, index) => {
+    if (!item || typeof item.type !== 'string') {
+      return
+    }
+    if (item.type === 'text' && typeof item.text === 'string' && item.text.trim()) {
+      segments.push({ id: makeSegmentKey(index, 'text'), content: item.text })
+      return
+    }
+    if (item.type === 'image') {
+      const caption = mergeImageCaptions(item.image_caption)
+      if (caption) {
+        segments.push({ id: makeSegmentKey(index, 'image'), content: caption })
+      }
+    }
+  })
+  return segments
+}
+
+function buildMarkdownFromContentList(items: MineruContentListItem[], translations: Map<string, string>) {
+  const fragments = items
+    .map((item, index) => renderContentListItem(item, index, translations))
+    .filter(fragment => fragment !== null && fragment !== undefined)
+    .map(fragment => fragment as string)
+  return fragments.join('\n\n')
+}
+
+function renderContentListItem(item: MineruContentListItem, index: number, translations: Map<string, string>) {
+  if (!item || typeof item.type !== 'string') {
+    return ''
+  }
+  if (item.type === 'text') {
+    const key = makeSegmentKey(index, 'text')
+    return translations.get(key) ?? (item.text ?? '')
+  }
+  if (item.type === 'equation') {
+    return (item.text || '').trim()
+  }
+  if (item.type === 'image') {
+    const key = makeSegmentKey(index, 'image')
+    const caption =
+      translations.get(key) ??
+      mergeImageCaptions(item.image_caption)
+    const path = item.img_path || ''
+    if (!caption) {
+      return `![](${path})`
+    }
+    return `![](${path})  \n${caption}`
+  }
+  return typeof item.text === 'string' ? item.text : ''
+}
+
+function makeSegmentKey(index: number, type: 'text' | 'image') {
+  return `${type}-${index}`
+}
+
+function joinLocalPath(dir: string, fileName: string) {
+  const safeDir = dir.replace(/\/+$/, '')
+  const safeFile = fileName.replace(/^\/+/, '')
+  return `${safeDir}/${safeFile}`
+}
+
+function mergeImageCaptions(lines?: string[]) {
+  if (!Array.isArray(lines)) {
+    return ''
+  }
+  return lines
+    .map(line => (typeof line === 'string' ? line.trim() : ''))
+    .filter(line => line.length > 0)
+    .join('\n')
 }

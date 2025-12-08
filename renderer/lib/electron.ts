@@ -27,6 +27,7 @@ type ElectronBridge = {
     responseType?: 'json' | 'text'
   }) => Promise<{ status: number; ok: boolean; data?: unknown; text?: string }>
   readLocalFile?: (filePath: string) => Promise<string>
+  readDir?: (dirPath: string) => Promise<string[]>
 }
 
 declare global {
@@ -51,7 +52,8 @@ const fallbackBridge: ElectronBridge = {
   performWindowAction: async action => {
     console.warn(`[electronBridge] window action fallback: ${action}`)
     return Promise.resolve()
-  }
+  },
+  readDir: async () => []
 }
 
 export const electronBridge: ElectronBridge = hasWindow && window.electron?.invoke
@@ -87,6 +89,8 @@ export const electronBridge: ElectronBridge = hasWindow && window.electron?.invo
         window.electron!.invoke!('mineru-download-unzip', payload).then(result => result as { extractDir: string; zipPath?: string }),
       mineruApiRequest: payload =>
         window.electron!.invoke!('mineru-api-request', payload).then(result => result as { status: number; ok: boolean; data?: unknown; text?: string }),
-      readLocalFile: filePath => window.electron!.invoke!('read-local-file', filePath).then(String)
+      readLocalFile: filePath => window.electron!.invoke!('read-local-file', filePath).then(String),
+      readDir: dirPath =>
+        window.electron!.invoke!('read-dir', dirPath).then(result => (Array.isArray(result) ? (result as unknown[]).map(String) : []))
     }
   : fallbackBridge

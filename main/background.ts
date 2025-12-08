@@ -351,6 +351,12 @@ ipcMain.handle(
   }
 )
 
+ipcMain.handle('read-dir', async (_event, dirPath: string) => {
+  if (!dirPath) throw new Error('dirPath is required')
+  const entries = await fs.readdir(dirPath)
+  return entries
+})
+
 ipcMain.handle('read-local-file', async (_event, filePath: string) => {
   if (!filePath) throw new Error('filePath is required')
   const data = await fs.readFile(filePath, 'utf-8')
