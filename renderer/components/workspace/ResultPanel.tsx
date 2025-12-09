@@ -9,6 +9,7 @@ import rehypeKatex from 'rehype-katex'
 import rehypeRaw from 'rehype-raw'
 import 'katex/dist/katex.min.css'
 import { ChatMessage } from './types'
+import { cn } from '@/lib/utils'
 
 type AgentProps = {
   showAgentInput: boolean
@@ -50,6 +51,114 @@ export function ResultPanel({
   const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'split'>('split')
   const exportDisabled = !markdownOutput || isExporting
   const markdownPlugins = useMemo(() => [remarkGfm, remarkMath], [])
+  const markdownComponents = useMemo(
+    () =>
+      ({
+        p: ({ node, children, className, ...rest }: any) => {
+          const containsHint = (node?.children || []).some((child: any) => child?.tagName === 'hint')
+          if (containsHint) {
+            return (
+              <div className={cn('mb-4 space-y-2', className)} {...rest}>
+                {children}
+              </div>
+            )
+          }
+          return (
+            <p className={cn('mb-4 leading-relaxed text-slate-800', className)} {...rest}>
+              {children}
+            </p>
+          )
+        },
+        img: ({ node: _node, className, ...props }: any) => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            {...props}
+            className={cn(
+              'my-2 max-h-[480px] max-w-full rounded-lg border border-slate-200 shadow-sm',
+              className
+            )}
+          />
+        ),
+        code: ({ node: _node, inline, className, children, ...props }: any) => (
+          <code
+            className={cn(
+              className,
+              inline
+                ? 'rounded bg-slate-100 px-1 py-0.5'
+                : 'block overflow-auto rounded-lg bg-slate-900/90 px-3 py-2 text-slate-50'
+            )}
+            {...props}>
+            {children}
+          </code>
+        ),
+        ans: ({ node: _node, children, ...props }: any) => (
+          <mark className="rounded bg-yellow-100 px-1 py-0.5 text-slate-800" {...props}>
+            {children}
+          </mark>
+        ),
+        hint: ({ node: _node, children, ...props }: any) => (
+          <div
+            className="my-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-[13px] text-slate-800 shadow-sm"
+            {...props}>
+            <div className="text-xs font-semibold uppercase tracking-wide text-blue-500">Hint</div>
+            <div className="mt-1 leading-relaxed">{children}</div>
+          </div>
+        ),
+        table: ({ node: _node, children, className, ...props }: any) => (
+          <div className="my-4 overflow-x-auto rounded-xl border border-slate-200">
+            <table className={cn('w-full min-w-[520px] text-left text-sm', className)} {...props}>
+              {children}
+            </table>
+          </div>
+        ),
+        thead: ({ node: _node, children, className, ...props }: any) => (
+          <thead className={cn('bg-slate-100 text-slate-600', className)} {...props}>
+            {children}
+          </thead>
+        ),
+        tbody: ({ node: _node, children, className, ...props }: any) => (
+          <tbody className={cn('divide-y divide-slate-100', className)} {...props}>
+            {children}
+          </tbody>
+        ),
+        th: ({ node: _node, children, className, ...props }: any) => (
+          <th className={cn('px-3 py-2 text-xs font-semibold uppercase tracking-wide', className)} {...props}>
+            {children}
+          </th>
+        ),
+        td: ({ node: _node, children, className, ...props }: any) => (
+          <td className={cn('px-3 py-2 align-top text-slate-700', className)} {...props}>
+            {children}
+          </td>
+        ),
+        ul: ({ node: _node, children, className, ...props }: any) => (
+          <ul className={cn('mb-4 list-disc pl-5 text-slate-700', className)} {...props}>
+            {children}
+          </ul>
+        ),
+        ol: ({ node: _node, children, className, ...props }: any) => (
+          <ol className={cn('mb-4 list-decimal pl-5 text-slate-700', className)} {...props}>
+            {children}
+          </ol>
+        ),
+        li: ({ node: _node, children, className, ...props }: any) => (
+          <li className={cn('mb-1 pl-1', className)} {...props}>
+            {children}
+          </li>
+        ),
+        blockquote: ({ node: _node, children, className, ...props }: any) => (
+          <blockquote className={cn('my-4 border-l-4 border-slate-200 pl-4 italic text-slate-600', className)} {...props}>
+            {children}
+          </blockquote>
+        ),
+        sup: ({ node: _node, children, className, ...props }: any) => (
+          <sup className={cn('text-[10px] font-semibold text-slate-500', className)} {...props}>
+            {children}
+          </sup>
+        )
+      }) as any,
+    []
+  )
 
   return (
     <div className="relative flex flex-1 flex-col bg-white">
@@ -112,26 +221,7 @@ export function ResultPanel({
                 <ReactMarkdown
                   remarkPlugins={markdownPlugins}
                   rehypePlugins={[rehypeKatex, rehypeRaw]}
-                  components={{
-                    img: props => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img {...props} className="my-2 max-h-[480px] max-w-full rounded-lg border border-slate-200 shadow-sm" />
-                    ),
-                    code: ({ inline, className, children, ...props }) => {
-                      return (
-                        <code
-                          className={`${className || ''} ${inline ? 'rounded bg-slate-100 px-1 py-0.5' : 'block rounded-lg bg-slate-900/90 px-3 py-2 text-slate-50 overflow-auto'}`}
-                          {...props}>
-                          {children}
-                        </code>
-                      )
-                    },
-                    ans: ({ children, ...props }) => (
-                      <mark className="rounded bg-yellow-100 px-1 py-0.5 text-slate-800" {...props}>
-                        {children}
-                      </mark>
-                    )
-                  }}>
+                  components={markdownComponents}>
                   {markdownOutput}
                 </ReactMarkdown>
               </div>

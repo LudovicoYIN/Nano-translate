@@ -68,7 +68,7 @@ async function mineruRequest<T>({
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json'
       },
-      body: body ?? null,
+      body: (body ?? null) as any,
       responseType: 'json'
     })
     const json = resp.data as MineruResponse<T> | null

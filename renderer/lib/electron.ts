@@ -11,6 +11,12 @@ type ElectronBridge = {
   setPromptConfigs?: (payload: { prompts: unknown; activeId?: string }) => Promise<void>
   getHistory?: () => Promise<unknown[]>
   setHistory?: (items: unknown[]) => Promise<void>
+  saveHistoryMarkdown?: (payload: {
+    historyId: string
+    markdown: string
+    fileName?: string
+    targetDir?: string
+  }) => Promise<{ filePath?: string }>
   openPath?: (targetPath: string) => Promise<boolean>
   deletePath?: (targetPath: string) => Promise<boolean>
   exportDocument?: (payload: {
@@ -32,14 +38,6 @@ type ElectronBridge = {
   }) => Promise<{ status: number; ok: boolean; data?: unknown; text?: string }>
   readLocalFile?: (filePath: string) => Promise<string>
   readDir?: (dirPath: string) => Promise<string[]>
-}
-
-declare global {
-  interface Window {
-    electron?: {
-      invoke?: (channel: string, payload?: unknown) => Promise<unknown>
-    }
-  }
 }
 
 const hasWindow = typeof window !== 'undefined'
@@ -91,6 +89,10 @@ export const electronBridge: ElectronBridge = hasWindow && window.electron?.invo
       setPromptConfigs: payload => window.electron!.invoke!('set-prompt-configs', payload).then(() => {}),
       getHistory: () => window.electron!.invoke!('get-history').then(result => (Array.isArray(result) ? result : [])),
       setHistory: items => window.electron!.invoke!('set-history', items).then(() => {}),
+      saveHistoryMarkdown: payload =>
+        window.electron!
+          .invoke!('save-history-markdown', payload)
+          .then(result => result as { filePath?: string }),
       openPath: targetPath => window.electron!.invoke!('open-path', targetPath).then(Boolean),
       deletePath: targetPath => window.electron!.invoke!('delete-path', targetPath).then(Boolean),
       exportDocument: payload =>

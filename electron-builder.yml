@@ -1,5 +1,5 @@
 appId: com.example.nextron
-productName: My Nextron App
+productName: Nano-translates
 copyright: Copyright © 2024 Maxime Premont
 directories:
   output: dist

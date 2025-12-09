@@ -411,6 +411,30 @@ ipcMain.handle('read-local-file', async (_event, filePath: string) => {
 })
 
 ipcMain.handle(
+  'save-history-markdown',
+  async (
+    _event,
+    payload: { historyId: string; markdown: string; fileName?: string; targetDir?: string }
+  ) => {
+    if (!payload?.historyId || !payload?.markdown) {
+      throw new Error('historyId and markdown are required')
+    }
+    const userDir = app.getPath('userData')
+    const safeHistoryId = sanitizeSegment(payload.historyId)
+    const storageDir = payload.targetDir
+      ? path.resolve(payload.targetDir)
+      : path.join(userDir, 'history-markdown', safeHistoryId)
+    await fs.mkdir(storageDir, { recursive: true })
+    const baseName = (payload.fileName || 'translation').replace(/\.[^/.]+$/, '')
+    const sanitizedBaseName = baseName.replace(/[\\/:*?"<>|]/g, '').trim() || 'translation'
+    const targetFile = `${sanitizedBaseName}-translated.md`
+    const filePath = path.join(storageDir, targetFile)
+    await fs.writeFile(filePath, payload.markdown, 'utf-8')
+    return { filePath }
+  }
+)
+
+ipcMain.handle(
   'export-document',
   async (
     _event,

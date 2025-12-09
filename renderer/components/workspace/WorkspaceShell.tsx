@@ -229,20 +229,47 @@ export function WorkspaceShell({ openSettingsOnMount = false }: WorkspaceShellPr
     })
   }
 
+  const persistHistoryMarkdown = async (
+    historyId: string | undefined,
+    markdown: string,
+    fileName?: string,
+    targetDir?: string | null
+  ) => {
+    if (!historyId) return null
+    if (!electronBridge.saveHistoryMarkdown) return null
+    try {
+      const result = await electronBridge.saveHistoryMarkdown({
+        historyId,
+        markdown,
+        fileName,
+        targetDir: targetDir ?? undefined
+      })
+      return result?.filePath ?? null
+    } catch (error) {
+      console.warn('[workspace] save history markdown failed', error)
+      return null
+    }
+  }
+
   const handleSelectHistory = async (item: HistoryEntry) => {
     setActiveHistoryId(item.id)
     setResourceDir(item.extractDir ?? null)
-    if (item.fullMdPath && electronBridge.readLocalFile) {
-      try {
-        const content = await electronBridge.readLocalFile(item.fullMdPath)
-        updateContent(content || '')
-        return
-      } catch (error) {
-        console.warn('[workspace] read history full.md failed', error)
+    const candidatePaths = [item.translatedMdPath, item.fullMdPath].filter(
+      (value): value is string => typeof value === 'string' && value.length > 0
+    )
+    if (electronBridge.readLocalFile && candidatePaths.length) {
+      for (const targetPath of candidatePaths) {
+        try {
+          const content = await electronBridge.readLocalFile(targetPath)
+          updateContent(content || '')
+          return
+        } catch (error) {
+          console.warn('[workspace] read history markdown failed', targetPath, error)
+        }
       }
     }
     const fallback = item.extractDir
-      ? `未能读取 full.md，请手动查看目录：${item.extractDir}`
+      ? `未能读取保存的 Markdown，请手动查看目录：${item.extractDir}`
       : '该历史缺少可读取的 Markdown 文件。'
     updateContent(fallback)
   }
@@ -262,15 +289,6 @@ export function WorkspaceShell({ openSettingsOnMount = false }: WorkspaceShellPr
         setResourceDir(parseResult.extractDir)
         const llmConfig = llmConfigs.find(item => item.id === activeLlmId)
         const promptConfig = prompts.find(item => item.id === activePromptId)
-        const headerLines = [
-          '# MinerU 解析完成',
-          `- 文件：${parseResult.fileName}`,
-          `- Batch ID：${parseResult.batchId}`,
-          `- ZIP 下载：${parseResult.fullZipUrl}`,
-          `- 解压目录：${parseResult.extractDir}`,
-          parseResult.fullMdPath ? `- full.md：${parseResult.fullMdPath}` : '',
-          ''
-        ].filter(Boolean)
         const canTranslate =
           !!llmConfig?.apiKey &&
           !!llmConfig?.baseUrl &&
@@ -306,13 +324,19 @@ export function WorkspaceShell({ openSettingsOnMount = false }: WorkspaceShellPr
           translatedMarkdown ??
           (parseResult.fullMdContent ||
             '未能读取 full.md，请手动检查解压目录中的内容。')
-        const header = [
-          ...headerLines,
-          markdownBody
-        ]
-        updateContent(header.join('\n'))
+        updateContent(markdownBody)
+        let translatedMdPath: string | null = null
+        if (historyId) {
+          translatedMdPath = await persistHistoryMarkdown(
+            historyId,
+            markdownBody,
+            file.name,
+            parseResult.extractDir
+          )
+        }
         if (historyId) {
           const finishedAt = Date.now()
+          const savedPath = translatedMdPath
           updateHistoryItems(prev =>
             prev.map(item =>
               item.id === historyId
@@ -324,7 +348,8 @@ export function WorkspaceShell({ openSettingsOnMount = false }: WorkspaceShellPr
                     batchId: parseResult.batchId,
                     extractDir: parseResult.extractDir,
                     fullMdPath: parseResult.fullMdPath,
-                    fullZipUrl: parseResult.fullZipUrl
+                    fullZipUrl: parseResult.fullZipUrl,
+                    translatedMdPath: savedPath ?? item.translatedMdPath
                   }
                 : item
             )
@@ -348,8 +373,18 @@ export function WorkspaceShell({ openSettingsOnMount = false }: WorkspaceShellPr
         await wait(600)
         setProcessingStep({ label: '完成', percent: 100 })
         updateContent(translation.markdown)
+        let translatedMdPath: string | null = null
+        if (historyId) {
+          translatedMdPath = await persistHistoryMarkdown(
+            historyId,
+            translation.markdown,
+            file.name,
+            null
+          )
+        }
         if (historyId) {
           const finishedAt = Date.now()
+          const savedPath = translatedMdPath
           updateHistoryItems(prev =>
             prev.map(item =>
               item.id === historyId
@@ -357,7 +392,8 @@ export function WorkspaceShell({ openSettingsOnMount = false }: WorkspaceShellPr
                     ...item,
                     status: 'done',
                     time: formatHistoryTime(finishedAt),
-                    createdAt: item.createdAt ?? finishedAt
+                    createdAt: item.createdAt ?? finishedAt,
+                    translatedMdPath: savedPath ?? item.translatedMdPath
                   }
                 : item
             )
@@ -607,7 +643,7 @@ export function WorkspaceShell({ openSettingsOnMount = false }: WorkspaceShellPr
   }
 
   const handleOpenHistoryDir = (item: HistoryEntry) => {
-    const targetPath = item.extractDir || item.fullMdPath
+    const targetPath = item.translatedMdPath || item.extractDir || item.fullMdPath
     if (!targetPath || !electronBridge.openPath) return
     electronBridge.openPath(targetPath).catch(error => {
       console.warn('[workspace] open history path failed', error)
@@ -616,9 +652,22 @@ export function WorkspaceShell({ openSettingsOnMount = false }: WorkspaceShellPr
 
   const handleDeleteHistory = (item: HistoryEntry) => {
     updateHistoryItems(prev => prev.filter(entry => entry.id !== item.id))
-    if (item.extractDir && electronBridge.deletePath) {
-      electronBridge.deletePath(item.extractDir).catch(error => {
-        console.warn('[workspace] delete history path failed', error)
+    const targets = new Set(
+      [item.extractDir, item.fullMdPath, item.translatedMdPath].filter(
+        (value): value is string => typeof value === 'string' && value.length > 0
+      )
+    )
+    if (item.translatedMdPath) {
+      const dirPath = item.translatedMdPath.replace(/[\\/][^\\/]+$/, '')
+      if (dirPath && !targets.has(dirPath)) {
+        targets.add(dirPath)
+      }
+    }
+    if (electronBridge.deletePath) {
+      targets.forEach(path => {
+        electronBridge.deletePath!(path).catch(error => {
+          console.warn('[workspace] delete history path failed', error)
+        })
       })
     }
     if (item.id === activeHistoryId) {
@@ -812,6 +861,13 @@ type MineruContentListItem = {
   text_format?: string
   img_path?: string
   image_caption?: string[]
+  text_level?: number
+  table_body?: string
+  table_caption?: string[]
+  table_footnote?: string[]
+  list_items?: string[]
+  sub_type?: string
+  content?: MineruContentListItem[]
 }
 
 type TranslateContentListParams = {
@@ -867,59 +923,115 @@ async function translateMineruContentList({
 
 function collectTranslatableSegments(items: MineruContentListItem[]): SegmentTask[] {
   const segments: SegmentTask[] = []
-  items.forEach((item, index) => {
-    if (!item || typeof item.type !== 'string') {
-      return
-    }
-    if (item.type === 'text' && typeof item.text === 'string' && item.text.trim()) {
-      segments.push({ id: makeSegmentKey(index, 'text'), content: item.text })
-      return
-    }
-    if (item.type === 'image') {
-      const caption = mergeImageCaptions(item.image_caption)
-      if (caption) {
-        segments.push({ id: makeSegmentKey(index, 'image'), content: caption })
+  const visit = (node: MineruContentListItem | undefined, path: number[]) => {
+    if (!node) return
+    if (typeof node.type === 'string') {
+      if (node.type === 'text' && typeof node.text === 'string' && node.text.trim()) {
+        segments.push({ id: makeSegmentKey(path, 'text'), content: node.text })
+      } else if (node.type === 'image') {
+        const caption = mergeImageCaptions(node.image_caption)
+        if (caption) {
+          segments.push({ id: makeSegmentKey(path, 'image'), content: caption })
+        }
       }
     }
-  })
+    if (Array.isArray(node.content)) {
+      node.content.forEach((child, index) => visit(child, path.concat(index)))
+    }
+  }
+  items.forEach((item, index) => visit(item, [index]))
   return segments
 }
 
 function buildMarkdownFromContentList(items: MineruContentListItem[], translations: Map<string, string>) {
   const fragments = items
-    .map((item, index) => renderContentListItem(item, index, translations))
+    .map((item, index) => renderContentListItem(item, [index], translations))
     .filter(fragment => fragment !== null && fragment !== undefined)
     .map(fragment => fragment as string)
   return fragments.join('\n\n')
 }
 
-function renderContentListItem(item: MineruContentListItem, index: number, translations: Map<string, string>) {
-  if (!item || typeof item.type !== 'string') {
+function renderContentListItem(
+  item: MineruContentListItem,
+  path: number[],
+  translations: Map<string, string>
+) {
+  if (!item) {
     return ''
   }
-  if (item.type === 'text') {
-    const key = makeSegmentKey(index, 'text')
-    return translations.get(key) ?? (item.text ?? '')
-  }
-  if (item.type === 'equation') {
-    return (item.text || '').trim()
-  }
-  if (item.type === 'image') {
-    const key = makeSegmentKey(index, 'image')
-    const caption =
-      translations.get(key) ??
-      mergeImageCaptions(item.image_caption)
-    const path = item.img_path || ''
-    if (!caption) {
-      return `![](${path})`
+  if (typeof item.type === 'string') {
+    if (item.type === 'text') {
+      const key = makeSegmentKey(path, 'text')
+      const headingPrefix = formatHeadingPrefix(item.text_level)
+      const body = translations.get(key) ?? item.text ?? ''
+      if (!headingPrefix) {
+        return body
+      }
+      const trimmed = body.trim()
+      return trimmed ? `${headingPrefix} ${trimmed}` : headingPrefix
     }
-    return `![](${path})  \n${caption}`
+    if (item.type === 'equation') {
+      return (item.text || '').trim()
+    }
+    if (item.type === 'image') {
+      const key = makeSegmentKey(path, 'image')
+      const caption = translations.get(key) ?? mergeImageCaptions(item.image_caption)
+      const pathValue = item.img_path || ''
+      if (!caption) {
+        return `![](${pathValue})`
+      }
+      return `![](${pathValue})  \n${caption}`
+    }
+    if (item.type === 'list') {
+      const lines = Array.isArray(item.list_items) ? item.list_items : []
+      if (!lines.length) return ''
+      return formatListContent(lines, item.sub_type)
+    }
+    if (item.type === 'table') {
+      const caption = Array.isArray(item.table_caption) ? item.table_caption.join(' ') : ''
+      const tableBody = item.table_body || ''
+      const footnote = Array.isArray(item.table_footnote) ? item.table_footnote.join('\n') : ''
+      return [caption, tableBody, footnote].filter(Boolean).join('\n\n')
+    }
+    if (item.type === 'aside_text') {
+      const text = item.text ?? ''
+      return text ? `> ${text}` : ''
+    }
+    if (item.type === 'page_footnote') {
+      return item.text ?? ''
+    }
   }
-  return typeof item.text === 'string' ? item.text : ''
+  if (Array.isArray(item.content)) {
+    const nested = item.content
+      .map((child, index) => renderContentListItem(child, path.concat(index), translations))
+      .filter(Boolean)
+    return nested.join('\n\n')
+  }
+  if (typeof item.text === 'string') {
+    return item.text
+  }
+  return ''
 }
 
-function makeSegmentKey(index: number, type: 'text' | 'image') {
-  return `${type}-${index}`
+function makeSegmentKey(path: number[], type: 'text' | 'image') {
+  return `${type}-${path.join('-')}`
+}
+
+function formatHeadingPrefix(level?: number) {
+  if (!level || level <= 0) return ''
+  const normalized = Math.min(Math.max(level, 1), 6)
+  return '#'.repeat(normalized)
+}
+
+function formatListContent(items: string[], subType?: string) {
+  if (!items.length) return ''
+  if (subType === 'ref_text') {
+    return items.join('\n\n')
+  }
+  if (subType === 'text') {
+    return items.map(line => `- ${line}`).join('\n')
+  }
+  return items.join('\n\n')
 }
 
 function joinLocalPath(dir: string, fileName: string) {

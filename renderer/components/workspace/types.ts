@@ -33,6 +33,7 @@ export interface HistoryEntry {
   extractDir?: string
   fullMdPath?: string
   fullZipUrl?: string
+  translatedMdPath?: string
   error?: string
   createdAt?: number
 }
