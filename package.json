@@ -74,7 +74,7 @@
     "@types/react": "npm:types-react@19.0.0-rc.1",
     "@typescript-eslint/eslint-plugin": "^8.4.0",
     "@typescript-eslint/parser": "^8.14.0",
-    "autoprefixer": "^10.4.19",
+    "autoprefixer": "^10.4.22",
     "electron": "^33.2.0",
     "electron-builder": "^25.0.5",
     "eslint": "^8.57.0",
