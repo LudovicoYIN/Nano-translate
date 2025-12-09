@@ -2,13 +2,13 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Languages, Settings, Minimize2, Maximize2, Monitor } from 'lucide-react'
+import { Settings, Minimize2, Maximize2, Monitor } from 'lucide-react'
+import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { HistorySidebar } from './HistorySidebar'
 import { MiniChat } from './MiniChat'
 import { ResultPanel } from './ResultPanel'
 import { SettingsDrawer } from './SettingsDrawer'
-import { SourcePanel } from './SourcePanel'
 import {
   DEFAULT_CHAT_HISTORY,
   DEFAULT_HISTORY,
@@ -26,7 +26,7 @@ import {
   WorkspaceMode
 } from './types'
 import { electronBridge } from '@/lib/electron'
-import { mockParseDocument, mockScreenshotFile, mockTranslateContent } from '@/lib/mock-services'
+import { mockParseDocument, mockTranslateContent } from '@/lib/mock-services'
 import { testLlmConnection } from '@/lib/llm'
 import { parseFileWithMineru } from '@/lib/mineru'
 import { translateSegments, type SegmentTask, requestChatCompletion } from '@/lib/translator'
@@ -56,7 +56,6 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const [agentQuery, setAgentQuery] = useState('')
   const [agentHistory, setAgentHistory] = useState<ChatMessage[]>([])
   const [isAgentWorking, setIsAgentWorking] = useState(false)
-  const [isSourceCollapsed, setIsSourceCollapsed] = useState(false)
   const [prompts, setPrompts] = useState<PromptConfig[]>(DEFAULT_PROMPTS)
   const [activePromptId, setActivePromptId] = useState(prompts[0]?.id ?? 'general')
   const [promptsLoaded, setPromptsLoaded] = useState(false)
@@ -280,9 +279,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
         updateContent(translation.markdown)
         setAgentHistory([])
       }
-      if (mode === 'full') {
-        setIsSourceCollapsed(true)
-      } else {
+      if (mode !== 'full') {
         appendChat({
           id: makeId(),
           role: 'ai',
@@ -311,21 +308,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
       file
     }
     setFiles([workspaceFile])
-    setIsSourceCollapsed(false)
     processTranslation(workspaceFile)
-  }
-
-  const handlePasteScreenshot = async () => {
-    setIsProcessing(true)
-    setIsSourceCollapsed(false)
-    try {
-      await electronBridge.captureScreenshot()
-    } catch (error) {
-      console.warn('[workspace] captureScreenshot fallback', error)
-    }
-    const screenshot = await mockScreenshotFile()
-    setFiles([screenshot])
-    await processTranslation(screenshot)
   }
 
   const appendChat = (message: ChatMessage) => {
@@ -557,7 +540,6 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
     setFiles([])
     setMarkdownOutput('')
     setAgentHistory([])
-    setIsSourceCollapsed(false)
   }
 
   const handleReprocess = () => {
@@ -577,7 +559,6 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
       source: 'upload'
     }
     setFiles([placeholder])
-    setIsSourceCollapsed(false)
     processTranslation(placeholder)
   }
 
@@ -716,23 +697,21 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
               />
             </div>
             <div className="no-drag flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
-                <Languages size={18} />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg text-white">
+                <Image
+                  src="/app-icon.png"
+                  alt="Nano Translate icon"
+                  width={48}
+                  height={48}
+                  className="rounded-md"
+                />
               </div>
-              <span className="font-bold text-slate-700">TransLate Pro</span>
-              {mode === 'full' && (
-                <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                  AI Editor
-                </span>
-              )}
+              <span className="font-bold text-slate-700">Nano-TransLate</span>
             </div>
           </div>
           <div className="no-drag flex items-center gap-3">
             {mode === 'full' && (
               <>
-                <div className="hidden items-center gap-1 text-xs text-slate-400 md:flex">
-                  <Monitor size={14} /> 截图 Ctrl+Shift+A
-                </div>
                 <button
                   onClick={() => setShowSettings(true)}
                   className="rounded-md p-2 text-slate-500 hover:bg-slate-200">
@@ -752,7 +731,9 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
             <HistorySidebar
               items={historyItems}
               onSelectFiles={handleFilesSelected}
-              onPasteScreenshot={handlePasteScreenshot}
+              prompts={prompts}
+              activePromptId={activePromptId}
+              onPromptChange={setActivePromptId}
             />
           )}
           <main className="relative flex flex-1 bg-white">
@@ -766,35 +747,17 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
               />
             ) : (
               <>
-                {!isSourceCollapsed && (
-                  <div className="w-1/2 border-r border-slate-100">
-                    <SourcePanel
-                      files={files}
-                      isProcessing={isProcessing}
-                      processingLabel={processingStep.label}
-                      processingPercent={processingStep.percent}
-                      prompts={prompts}
-                      activePromptId={activePromptId}
-                      onPromptChange={setActivePromptId}
-                      onDeleteFile={handleDeleteFile}
-                      onReprocess={handleReprocess}
-                      onPasteScreenshot={handlePasteScreenshot}
-                      onOpenSystemFile={handleSystemFilePick}
-                    />
-                  </div>
-                )}
                 <ResultPanel
                   markdownOutput={markdownOutput}
                   onContentChange={updateContent}
                   onExport={handleExport}
                   isExporting={isExporting}
                   agentProps={agentProps}
-                  isSourceCollapsed={isSourceCollapsed}
-                  onToggleSource={() => setIsSourceCollapsed(prev => !prev)}
                   charCount={markdownOutput.length}
                   isProcessing={isProcessing}
                   processingLabel={processingStep.label}
                   processingPercent={processingStep.percent}
+                  hasFile={files.length > 0}
                 />
               </>
             )}

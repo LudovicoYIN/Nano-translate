@@ -15,9 +15,6 @@ type Props = {
 export function MiniChat({ chatHistory, inputValue, onInputChange, onSend, chatEndRef }: Props) {
   return (
     <div className="flex h-full flex-1 flex-col">
-      <div className="border-b border-blue-100 bg-blue-50/50 p-2 text-center text-xs text-blue-600">
-        ⚡ 快速问答模式
-      </div>
       <div className="flex-1 space-y-4 overflow-y-auto bg-white p-4">
         {chatHistory.map(message => (
           <div

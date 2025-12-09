@@ -1,16 +1,13 @@
 'use client'
 
-import { Check, FileText } from 'lucide-react'
-import { PromptConfig, WorkspaceFile } from './types'
+import { FileText } from 'lucide-react'
+import { WorkspaceFile } from './types'
 
 type SourcePanelProps = {
   files: WorkspaceFile[]
   isProcessing: boolean
   processingLabel: string
   processingPercent: number
-  prompts: PromptConfig[]
-  activePromptId: string
-  onPromptChange: (id: string) => void
   onDeleteFile: () => void
   onReprocess: () => void
   onPasteScreenshot: () => void
@@ -22,9 +19,6 @@ export function SourcePanel({
   isProcessing,
   processingLabel,
   processingPercent,
-  prompts,
-  activePromptId,
-  onPromptChange,
   onDeleteFile,
   onReprocess,
   onPasteScreenshot,
@@ -40,11 +34,6 @@ export function SourcePanel({
           <p className="text-xs uppercase tracking-wide text-slate-400">Source</p>
           <h2 className="text-lg font-bold text-slate-800">源文档</h2>
         </div>
-        <PromptDropdown
-          prompts={prompts}
-          activePromptId={activePromptId}
-          onPromptChange={onPromptChange}
-        />
       </div>
       <div className="flex flex-1 flex-col rounded-xl border border-dashed border-slate-200 bg-white/80 p-4">
         {currentFile ? (
@@ -108,37 +97,6 @@ export function SourcePanel({
             </div>
           </div>
         )}
-      </div>
-    </div>
-  )
-}
-
-function PromptDropdown({
-  prompts,
-  activePromptId,
-  onPromptChange
-}: {
-  prompts: PromptConfig[]
-  activePromptId: string
-  onPromptChange: (id: string) => void
-}) {
-  return (
-    <div className="group relative">
-      <button className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-all hover:border-blue-400 hover:text-blue-600">
-        {prompts.find(prompt => prompt.id === activePromptId)?.name ?? '选择领域'}
-      </button>
-      <div className="absolute right-0 top-full z-10 mt-1 hidden w-48 overflow-hidden rounded-lg border border-slate-100 bg-white shadow-xl transition-all group-hover:block">
-        {prompts.map(prompt => (
-          <button
-            key={prompt.id}
-            className={`flex w-full items-center justify-between px-4 py-2 text-left text-sm ${
-              prompt.id === activePromptId ? 'bg-blue-50/50 font-bold text-blue-600' : 'text-slate-600'
-            }`}
-            onClick={() => onPromptChange(prompt.id)}>
-            {prompt.name}
-            {prompt.id === activePromptId && <Check size={12} />}
-          </button>
-        ))}
       </div>
     </div>
   )

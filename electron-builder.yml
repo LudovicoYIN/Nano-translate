@@ -4,6 +4,7 @@ copyright: Copyright © 2024 Maxime Premont
 directories:
   output: dist
   buildResources: resources
+icon: icon.png
 files:
   - from: .
     filter:
@@ -16,3 +17,8 @@ linux:
     - rpm
     - snap
   category: Utility
+  icon: icon.png
+mac:
+  icon: icon.png
+win:
+  icon: icon.png

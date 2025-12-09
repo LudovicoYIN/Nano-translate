@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Bot, Check, CornerDownLeft, Download, FileCode, Loader2, PanelLeftClose, PanelLeftOpen, Sparkles, X } from 'lucide-react'
+import { Bot, Check, CornerDownLeft, Download, FileCode, Loader2, Sparkles, X } from 'lucide-react'
 import { ChatMessage } from './types'
 
 type AgentProps = {
@@ -21,12 +21,11 @@ type ResultPanelProps = {
   onExport: (format: 'pdf' | 'docx' | 'markdown') => void
   isExporting: boolean
   agentProps: AgentProps
-  isSourceCollapsed: boolean
-  onToggleSource: () => void
   charCount: number
   isProcessing: boolean
   processingLabel: string
   processingPercent: number
+  hasFile: boolean
 }
 
 export function ResultPanel({
@@ -35,23 +34,17 @@ export function ResultPanel({
   onExport,
   isExporting,
   agentProps,
-  isSourceCollapsed,
-  onToggleSource,
   charCount,
   isProcessing,
   processingLabel,
-  processingPercent
+  processingPercent,
+  hasFile
 }: ResultPanelProps) {
   const [exportFormat, setExportFormat] = useState<'pdf' | 'docx' | 'markdown'>('pdf')
   const exportDisabled = !markdownOutput || isExporting
 
   return (
     <div className="relative flex flex-1 flex-col bg-white">
-      <button
-        onClick={onToggleSource}
-        className="absolute -left-3 top-1/2 z-50 flex h-12 w-6 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 shadow-md transition-colors hover:border-blue-300 hover:text-blue-600">
-        {isSourceCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
-      </button>
       <div className="flex h-14 items-center justify-between border-b border-slate-100 px-6">
         <h2 className="flex items-center gap-2 text-lg font-bold text-slate-700">
           <Sparkles className="text-yellow-500" size={18} />
@@ -87,8 +80,17 @@ export function ResultPanel({
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-slate-300">
             <div className="text-center">
               <FileCode className="mx-auto mb-2 opacity-20" size={48} />
-              <p>翻译结果将显示在这里</p>
-              <p className="mt-2 text-xs text-slate-400">上传文件后自动开始</p>
+              {hasFile ? (
+                <>
+                  <p>正在准备处理结果</p>
+                  <p className="mt-2 text-xs text-slate-400">正在解析或转换中...</p>
+                </>
+              ) : (
+                <>
+                  <p>翻译结果将显示在这里</p>
+                  <p className="mt-2 text-xs text-slate-400">在左侧上传文件或截图后自动开始</p>
+                </>
+              )}
             </div>
           </div>
         )}
