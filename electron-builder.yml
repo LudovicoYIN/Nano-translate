@@ -10,6 +10,9 @@ files:
     filter:
       - package.json
       - app
+extraResources:
+  - from: resources/pandoc
+    to: pandoc
 publish: null
 linux:
   target:

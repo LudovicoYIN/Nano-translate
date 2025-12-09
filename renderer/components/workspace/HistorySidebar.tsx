@@ -1,9 +1,8 @@
 'use client'
 
-import { ChangeEvent, useId } from 'react'
+import { ChangeEvent, useEffect, useId, useRef, useState } from 'react'
 import { Check, FileText, History, Image as ImageIcon, MoreVertical, Upload } from 'lucide-react'
 import { HistoryEntry, PromptConfig } from './types'
-import { useState } from 'react'
 
 type Props = {
   items: HistoryEntry[]
@@ -151,24 +150,45 @@ function PromptDropdown({
   activePromptId: string
   onPromptChange: (id: string) => void
 }) {
+  const [open, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!containerRef.current) return
+      if (!containerRef.current.contains(event.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [])
+
   return (
-    <div className="group relative">
-      <button className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-all hover:border-blue-400 hover:text-blue-600">
+    <div className="relative" ref={containerRef}>
+      <button
+        className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition-all hover:border-blue-400 hover:text-blue-600"
+        onClick={() => setOpen(prev => !prev)}>
         <span className="truncate">{prompts.find(prompt => prompt.id === activePromptId)?.name ?? '选择领域'}</span>
       </button>
-      <div className="absolute left-0 top-full z-10 mt-1 hidden w-full overflow-hidden rounded-lg border border-slate-100 bg-white shadow-xl transition-all group-hover:block">
-        {prompts.map(prompt => (
-          <button
-            key={prompt.id}
-            className={`flex w-full items-center justify-between px-4 py-2 text-left text-sm ${
-              prompt.id === activePromptId ? 'bg-blue-50/50 font-bold text-blue-600' : 'text-slate-600'
-            }`}
-            onClick={() => onPromptChange(prompt.id)}>
-            <span className="truncate">{prompt.name}</span>
-            {prompt.id === activePromptId && <Check size={12} />}
-          </button>
-        ))}
-      </div>
+      {open && (
+        <div className="absolute left-0 top-full z-10 mt-1 w-full overflow-hidden rounded-lg border border-slate-100 bg-white shadow-xl">
+          {prompts.map(prompt => (
+            <button
+              key={prompt.id}
+              className={`flex w-full items-center justify-between px-4 py-2 text-left text-sm ${
+                prompt.id === activePromptId ? 'bg-blue-50/50 font-bold text-blue-600' : 'text-slate-600'
+              }`}
+              onClick={() => {
+                onPromptChange(prompt.id)
+                setOpen(false)
+              }}>
+              <span className="truncate">{prompt.name}</span>
+              {prompt.id === activePromptId && <Check size={12} />}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

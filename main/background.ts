@@ -28,12 +28,12 @@ if (isProd) {
     height: 720,
     minWidth: 960,
     minHeight: 640,
-    frame: false,
-    transparent: true,
-    backgroundColor: '#00000000',
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
-    vibrancy: process.platform === 'darwin' ? 'under-window' : undefined,
-    visualEffectState: process.platform === 'darwin' ? 'active' : undefined,
+    frame: true,
+    transparent: false,
+    backgroundColor: '#ffffff',
+    titleBarStyle: 'default',
+    vibrancy: undefined,
+    visualEffectState: undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js')
     }

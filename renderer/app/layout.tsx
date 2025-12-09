@@ -12,9 +12,9 @@ const fontSans = FontSans({
 })
 
 export const metadata: Metadata = {
-  title: 'Nextron Boilerplate',
+  title: 'Nano-Translate',
   description:
-    'Nextron ( Next.Js + Electron ) project boilerplate in TypeScript, with TailwindCSS + Shadcn/ui, web and desktop crossbuild'
+    '大模型翻译软件'
 }
 
 export default function RootLayout({

@@ -1,29 +1,22 @@
 /* eslint-disable no-alert */
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Settings, Minimize2, Maximize2, Monitor } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Settings } from 'lucide-react'
 import Image from 'next/image'
 import { cn } from '@/lib/utils'
 import { HistorySidebar } from './HistorySidebar'
-import { MiniChat } from './MiniChat'
 import { ResultPanel } from './ResultPanel'
 import { SettingsDrawer } from './SettingsDrawer'
-import {
-  DEFAULT_CHAT_HISTORY,
-  DEFAULT_HISTORY,
-  DEFAULT_LLMS,
-  DEFAULT_PARSERS,
-  DEFAULT_PROMPTS
-} from './constants'
+import { DEFAULT_LLMS, DEFAULT_PARSERS, DEFAULT_PROMPTS } from './constants'
 import {
   ChatMessage,
+  HistoryEntry,
   LlmConfig,
   ParserConfig,
   PromptConfig,
   SettingsTab,
-  WorkspaceFile,
-  WorkspaceMode
+  WorkspaceFile
 } from './types'
 import { electronBridge } from '@/lib/electron'
 import { mockParseDocument, mockTranslateContent } from '@/lib/mock-services'
@@ -32,7 +25,6 @@ import { parseFileWithMineru } from '@/lib/mineru'
 import { translateSegments, type SegmentTask, requestChatCompletion } from '@/lib/translator'
 
 type WorkspaceShellProps = {
-  initialMode?: WorkspaceMode
   openSettingsOnMount?: boolean
 }
 
@@ -58,10 +50,7 @@ const detectHistoryType = (fileName: string): HistoryEntry['type'] => {
   return 'image'
 }
 
-export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = false }: WorkspaceShellProps) {
-  const [mode, setMode] = useState<WorkspaceMode>(initialMode)
-  const [chatHistory, setChatHistory] = useState<ChatMessage[]>(DEFAULT_CHAT_HISTORY)
-  const [inputContent, setInputContent] = useState('')
+export function WorkspaceShell({ openSettingsOnMount = false }: WorkspaceShellProps) {
   const [files, setFiles] = useState<WorkspaceFile[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [processingStep, setProcessingStep] = useState({ label: '', percent: 0 })
@@ -77,7 +66,6 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const [prompts, setPrompts] = useState<PromptConfig[]>(DEFAULT_PROMPTS)
   const [activePromptId, setActivePromptId] = useState(prompts[0]?.id ?? 'general')
   const [promptsLoaded, setPromptsLoaded] = useState(false)
-  const [isChatSending, setIsChatSending] = useState(false)
   const [llmConfigs, setLlmConfigs] = useState<LlmConfig[]>(DEFAULT_LLMS)
   const [activeLlmId, setActiveLlmId] = useState(llmConfigs[0]?.id ?? '')
   const [llmLoaded, setLlmLoaded] = useState(false)
@@ -95,12 +83,6 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const [historyItems, setHistoryItems] = useState<HistoryEntry[]>([])
   const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null)
   const [windowState, setWindowState] = useState<'normal' | 'maximized' | 'fullscreen'>('normal')
-  const chatEndRef = useRef<HTMLDivElement | null>(null)
-  const chatAbortRef = useRef<AbortController | null>(null)
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatHistory])
 
   useEffect(() => {
     const loadLlmConfigs = async () => {
@@ -383,14 +365,6 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
         }
         setAgentHistory([])
       }
-      if (mode !== 'full') {
-        appendChat({
-          id: makeId(),
-          role: 'ai',
-          content: `文件 ${file.name} 处理完成！`,
-          createdAt: Date.now()
-        })
-      }
     } catch (error) {
       console.error('[workspace] 解析失败', error)
       setProcessingStep({ label: '解析失败', percent: 100 })
@@ -441,84 +415,6 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
     }
     setFiles([workspaceFile])
     processTranslation(workspaceFile, historyId)
-  }
-
-  const appendChat = (message: ChatMessage) => {
-    setChatHistory(prev => [...prev, message])
-  }
-  const updateChatContent = (id: string, updater: (content: string) => string) => {
-    setChatHistory(prev =>
-      prev.map(item => (item.id === id ? { ...item, content: updater(item.content) } : item))
-    )
-  }
-
-  const handleSendMessage = async () => {
-    if (!inputContent.trim()) return
-    if (isChatSending) return
-    const llmConfig = llmConfigs.find(item => item.id === activeLlmId)
-    if (!llmConfig?.baseUrl || !llmConfig?.apiKey || !llmConfig?.model) {
-      alert('请先在“设置-大模型”中配置可用的模型')
-      return
-    }
-    const promptConfig = prompts.find(item => item.id === activePromptId)
-    const systemPrompt =
-      promptConfig?.content || '你是专业的语言助手，请用中文简洁回答用户问题。'
-    const userMessage: ChatMessage = {
-      id: makeId(),
-      role: 'user',
-      content: inputContent,
-      createdAt: Date.now()
-    }
-    const conversation = [...chatHistory, userMessage].slice(-10)
-    appendChat(userMessage)
-    setInputContent('')
-    setIsChatSending(true)
-    chatAbortRef.current?.abort()
-    const controller = new AbortController()
-    chatAbortRef.current = controller
-    const replyId = makeId()
-    appendChat({
-      id: replyId,
-      role: 'ai',
-      content: '',
-      createdAt: Date.now()
-    })
-    try {
-      const messages = [
-        { role: 'system' as const, content: `${systemPrompt}\n保持回答凝练。` },
-        ...conversation.map(item => ({
-          role: item.role === 'user' ? ('user' as const) : ('assistant' as const),
-          content: item.content
-        }))
-      ]
-      const answer = await requestChatCompletion(
-        llmConfig,
-        messages,
-        0.4,
-        delta => updateChatContent(replyId, prev => `${prev}${delta}`),
-        controller.signal
-      )
-      updateChatContent(replyId, () => answer)
-    } catch (error) {
-      updateChatContent(
-        replyId,
-        () => {
-          if (error instanceof DOMException && error.name === 'AbortError') {
-            return '已暂停生成'
-          }
-          if (error instanceof Error) return `回答失败：${error.message}`
-          return '回答失败：未知错误'
-        }
-      )
-    } finally {
-      chatAbortRef.current = null
-      setIsChatSending(false)
-    }
-  }
-
-  const handlePauseChat = () => {
-    if (!isChatSending) return
-    chatAbortRef.current?.abort()
   }
 
   const handleAgentAsk = async () => {
@@ -760,16 +656,6 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
     processTranslation(placeholder, historyId)
   }
 
-  const toggleMode = () => {
-    setMode(prev => (prev === 'full' ? 'mini' : 'full'))
-  }
-
-  const handleWindowAction = (action: 'close' | 'minimize' | 'maximize') => {
-    electronBridge.performWindowAction(action).catch(error => {
-      console.warn('[workspace] window action failed', error)
-    })
-  }
-
   const agentProps = {
     showAgentInput,
     onToggleAgentInput: setShowAgentInput,
@@ -850,21 +736,13 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
     if (windowState !== 'normal') {
       return 'h-screen w-screen'
     }
-    return mode === 'full' ? 'w-full h-[90vh] max-w-7xl' : 'h-[600px] w-[400px]'
-  }, [mode, windowState])
+    return 'w-full h-screen'
+  }, [windowState])
 
-  const containerClass = cn(
-    'flex flex-col overflow-hidden bg-white/95 transition-all',
-    shellClasses,
-    windowState !== 'normal' ? 'rounded-none border border-slate-200 shadow-none' : 'rounded-2xl border border-slate-200 shadow-2xl'
-  )
+  const containerClass = cn('flex flex-col overflow-hidden bg-white transition-all', shellClasses)
 
   return (
-    <div
-      className={cn(
-        'flex min-h-screen w-full bg-transparent',
-        windowState !== 'normal' ? 'items-stretch justify-stretch px-0 py-0' : 'items-center justify-center px-6 py-4'
-      )}>
+    <div className={cn('flex min-h-screen w-full bg-white', 'items-stretch justify-stretch')}>
       <SettingsDrawer
         open={showSettings}
         onClose={() => setShowSettings(false)}
@@ -875,100 +753,52 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
         parserProps={settingsParserProps}
       />
       <div className={containerClass}>
-        <header className="drag-region flex h-14 select-none items-center justify-between border-b border-slate-100 bg-slate-50/95 px-4 backdrop-blur">
-          <div className="flex items-center gap-4">
-            <div className="no-drag flex items-center gap-2">
-              <button
-                aria-label="关闭窗口"
-                className="h-3.5 w-3.5 rounded-full bg-[#ff5f57] shadow-inner transition hover:scale-105"
-                onClick={() => handleWindowAction('close')}
-              />
-              <button
-                aria-label="最小化窗口"
-                className="h-3.5 w-3.5 rounded-full bg-[#febb2e] shadow-inner transition hover:scale-105"
-                onClick={() => handleWindowAction('minimize')}
-              />
-              <button
-                aria-label="最大化窗口"
-                className="h-3.5 w-3.5 rounded-full bg-[#28c840] shadow-inner transition hover:scale-105"
-                onClick={() => handleWindowAction('maximize')}
+        <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg text-white">
+              <Image
+                src="/app-icon.png"
+                alt="Nano Translate icon"
+                width={48}
+                height={48}
+                className="rounded-md"
               />
             </div>
-            <div className="no-drag flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg text-white">
-                <Image
-                  src="/app-icon.png"
-                  alt="Nano Translate icon"
-                  width={48}
-                  height={48}
-                  className="rounded-md"
-                />
-              </div>
-              <span className="font-bold text-slate-700">Nano-TransLate</span>
-            </div>
+            <span className="font-bold text-slate-700">Nano-TransLate</span>
           </div>
-          <div className="no-drag flex items-center gap-3">
-            {mode === 'full' && (
-              <>
-                <button
-                  onClick={() => setShowSettings(true)}
-                  className="rounded-md p-2 text-slate-500 hover:bg-slate-200">
-                  <Settings size={18} />
-                </button>
-              </>
-            )}
+          <div className="flex items-center gap-3">
             <button
-              onClick={toggleMode}
-              className="rounded-md p-2 text-blue-600 transition-colors hover:bg-blue-50">
-              {mode === 'full' ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+              onClick={() => setShowSettings(true)}
+              className="rounded-md p-2 text-slate-500 hover:bg-slate-200">
+              <Settings size={18} />
             </button>
           </div>
-        </header>
-        <div className="no-drag flex flex-1 overflow-hidden">
-          {mode === 'full' && (
-            <HistorySidebar
-              items={historyItems}
-              onSelectFiles={handleFilesSelected}
-              prompts={prompts}
-              activePromptId={activePromptId}
-              onPromptChange={setActivePromptId}
-              activeHistoryId={activeHistoryId}
-              onSelectHistory={handleSelectHistory}
-              onOpenHistoryDir={handleOpenHistoryDir}
-              onDeleteHistory={handleDeleteHistory}
-            />
-          )}
+        </div>
+        <div className="flex flex-1 overflow-hidden">
+          <HistorySidebar
+            items={historyItems}
+            onSelectFiles={handleFilesSelected}
+            prompts={prompts}
+            activePromptId={activePromptId}
+            onPromptChange={setActivePromptId}
+            activeHistoryId={activeHistoryId}
+            onSelectHistory={handleSelectHistory}
+            onOpenHistoryDir={handleOpenHistoryDir}
+            onDeleteHistory={handleDeleteHistory}
+          />
           <main className="relative flex flex-1 bg-white">
-            {mode === 'mini' ? (
-              <MiniChat
-                chatHistory={chatHistory}
-                inputValue={inputContent}
-                onInputChange={setInputContent}
-                onSend={handleSendMessage}
-                chatEndRef={chatEndRef}
-                prompts={prompts}
-                activePromptId={activePromptId}
-                onPromptChange={setActivePromptId}
-                onClear={() => setChatHistory([])}
-                isSending={isChatSending}
-                onPause={handlePauseChat}
-              />
-            ) : (
-              <>
-                <ResultPanel
-                  markdownOutput={markdownOutput}
-                  onContentChange={updateContent}
-                  onExport={handleExport}
-                  isExporting={isExporting}
-                  agentProps={agentProps}
-                  charCount={markdownOutput.length}
-                  isProcessing={isProcessing}
-                  processingLabel={processingStep.label}
-                  processingPercent={processingStep.percent}
-                  hasFile={files.length > 0}
-                />
-              </>
-            )}
+            <ResultPanel
+              markdownOutput={markdownOutput}
+              onContentChange={updateContent}
+              onExport={handleExport}
+              isExporting={isExporting}
+              agentProps={agentProps}
+              charCount={markdownOutput.length}
+              isProcessing={isProcessing}
+              processingLabel={processingStep.label}
+              processingPercent={processingStep.percent}
+              hasFile={files.length > 0}
+            />
           </main>
         </div>
       </div>

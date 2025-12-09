@@ -65,7 +65,7 @@
   }
   html,
   body {
-    background-color: transparent;
+    background-color: hsl(var(--background));
   }
   body {
     @apply text-foreground;
