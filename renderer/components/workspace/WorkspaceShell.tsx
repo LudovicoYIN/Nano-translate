@@ -250,20 +250,10 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const handleSelectHistory = async (item: HistoryEntry) => {
     setActiveHistoryId(item.id)
     setResourceDir(item.extractDir ?? null)
-    const headerLines = [
-      '# 历史记录',
-      `- 文件：${item.name}`,
-      item.batchId ? `- Batch ID：${item.batchId}` : '',
-      item.fullZipUrl ? `- ZIP 下载：${item.fullZipUrl}` : '',
-      item.extractDir ? `- 解压目录：${item.extractDir}` : '',
-      item.fullMdPath ? `- full.md：${item.fullMdPath}` : '',
-      item.status === 'failed' && item.error ? `- 错误：${item.error}` : '',
-      ''
-    ].filter(Boolean)
     if (item.fullMdPath && electronBridge.readLocalFile) {
       try {
         const content = await electronBridge.readLocalFile(item.fullMdPath)
-        updateContent([...headerLines, content || '（文件为空）'].join('\n'))
+        updateContent(content || '')
         return
       } catch (error) {
         console.warn('[workspace] read history full.md failed', error)
@@ -272,7 +262,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
     const fallback = item.extractDir
       ? `未能读取 full.md，请手动查看目录：${item.extractDir}`
       : '该历史缺少可读取的 Markdown 文件。'
-    updateContent([...headerLines, fallback].join('\n'))
+    updateContent(fallback)
   }
 
   const processTranslation = async (file: WorkspaceFile, historyId?: string) => {
@@ -720,6 +710,28 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
     }
   }
 
+  const handleOpenHistoryDir = (item: HistoryEntry) => {
+    const targetPath = item.extractDir || item.fullMdPath
+    if (!targetPath || !electronBridge.openPath) return
+    electronBridge.openPath(targetPath).catch(error => {
+      console.warn('[workspace] open history path failed', error)
+    })
+  }
+
+  const handleDeleteHistory = (item: HistoryEntry) => {
+    updateHistoryItems(prev => prev.filter(entry => entry.id !== item.id))
+    if (item.extractDir && electronBridge.deletePath) {
+      electronBridge.deletePath(item.extractDir).catch(error => {
+        console.warn('[workspace] delete history path failed', error)
+      })
+    }
+    if (item.id === activeHistoryId) {
+      setActiveHistoryId(null)
+      setMarkdownOutput('')
+      setResourceDir(null)
+    }
+  }
+
   const handleSystemFilePick = async () => {
     const paths = await electronBridge.openSystemFile()
     if (!paths.length) return
@@ -922,6 +934,8 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
               onPromptChange={setActivePromptId}
               activeHistoryId={activeHistoryId}
               onSelectHistory={handleSelectHistory}
+              onOpenHistoryDir={handleOpenHistoryDir}
+              onDeleteHistory={handleDeleteHistory}
             />
           )}
           <main className="relative flex flex-1 bg-white">

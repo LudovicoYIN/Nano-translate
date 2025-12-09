@@ -1,8 +1,9 @@
 'use client'
 
 import { ChangeEvent, useId } from 'react'
-import { Check, FileText, History, Image as ImageIcon, Upload } from 'lucide-react'
+import { Check, FileText, History, Image as ImageIcon, MoreVertical, Upload } from 'lucide-react'
 import { HistoryEntry, PromptConfig } from './types'
+import { useState } from 'react'
 
 type Props = {
   items: HistoryEntry[]
@@ -12,6 +13,8 @@ type Props = {
   onPromptChange: (id: string) => void
   activeHistoryId?: string | null
   onSelectHistory?: (item: HistoryEntry) => void
+  onOpenHistoryDir?: (item: HistoryEntry) => void
+  onDeleteHistory?: (item: HistoryEntry) => void
 }
 
 export function HistorySidebar({
@@ -21,17 +24,24 @@ export function HistorySidebar({
   activePromptId,
   onPromptChange,
   activeHistoryId,
-  onSelectHistory
+  onSelectHistory,
+  onOpenHistoryDir,
+  onDeleteHistory
 }: Props) {
   const inputId = useId()
+  const [menu, setMenu] = useState<{ x: number; y: number; item: HistoryEntry } | null>(null)
+
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files?.length) {
       onSelectFiles(event.target.files)
       event.target.value = ''
     }
   }
+
+  const closeMenu = () => setMenu(null)
+
   return (
-    <aside className="w-64 shrink-0 border-r border-slate-100 bg-slate-50">
+    <aside className="relative w-64 shrink-0 border-r border-slate-100 bg-slate-50" onClick={closeMenu}>
       <div className="space-y-3 px-4 pb-3">
         <div>
           <input
@@ -82,9 +92,52 @@ export function HistorySidebar({
                 {item.status === 'processing' ? '处理中…' : item.status === 'failed' ? '失败' : item.time}
               </div>
             </div>
+            <div
+              className="text-slate-400 opacity-0 transition group-hover:opacity-100"
+              onClick={e => {
+                e.stopPropagation()
+                e.preventDefault()
+                setMenu({ x: e.clientX, y: e.clientY, item })
+              }}>
+              <MoreVertical size={14} />
+            </div>
           </button>
         ))}
       </nav>
+      {menu && (
+        <>
+          <div
+            className="fixed inset-0 z-20"
+            onClick={closeMenu}
+            onContextMenu={e => {
+              e.preventDefault()
+              closeMenu()
+            }}
+          />
+          <div
+            className="fixed z-30 w-40 divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white shadow-xl"
+            style={{ top: menu.y + 4, left: menu.x + 4 }}
+            onClick={e => e.stopPropagation()}
+            onContextMenu={e => e.preventDefault()}>
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50"
+              onClick={() => {
+                closeMenu()
+                onOpenHistoryDir?.(menu.item)
+              }}>
+              打开所在位置
+            </button>
+            <button
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
+              onClick={() => {
+                closeMenu()
+                onDeleteHistory?.(menu.item)
+              }}>
+              删除记录
+            </button>
+          </div>
+        </>
+      )}
     </aside>
   )
 }

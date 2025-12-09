@@ -11,6 +11,8 @@ type ElectronBridge = {
   setPromptConfigs?: (payload: { prompts: unknown; activeId?: string }) => Promise<void>
   getHistory?: () => Promise<unknown[]>
   setHistory?: (items: unknown[]) => Promise<void>
+  openPath?: (targetPath: string) => Promise<boolean>
+  deletePath?: (targetPath: string) => Promise<boolean>
   exportDocument?: (payload: {
     markdown: string
     format: 'markdown' | 'docx' | 'pdf'
@@ -57,7 +59,9 @@ const fallbackBridge: ElectronBridge = {
   },
   readDir: async () => [],
   getHistory: async () => [],
-  setHistory: async () => {}
+  setHistory: async () => {},
+  openPath: async () => false,
+  deletePath: async () => false
 }
 
 export const electronBridge: ElectronBridge = hasWindow && window.electron?.invoke
@@ -87,6 +91,8 @@ export const electronBridge: ElectronBridge = hasWindow && window.electron?.invo
       setPromptConfigs: payload => window.electron!.invoke!('set-prompt-configs', payload).then(() => {}),
       getHistory: () => window.electron!.invoke!('get-history').then(result => (Array.isArray(result) ? result : [])),
       setHistory: items => window.electron!.invoke!('set-history', items).then(() => {}),
+      openPath: targetPath => window.electron!.invoke!('open-path', targetPath).then(Boolean),
+      deletePath: targetPath => window.electron!.invoke!('delete-path', targetPath).then(Boolean),
       exportDocument: payload =>
         window.electron!.invoke!('export-document', payload).then(
           result => result as { success?: boolean; filePath?: string; canceled?: boolean }

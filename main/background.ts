@@ -4,6 +4,7 @@ import os from 'os'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { app, ipcMain, BrowserWindow, dialog } from 'electron'
+import { shell } from 'electron'
 import serve from 'electron-serve'
 import { createWindow } from './helpers'
 import Store from 'electron-store'
@@ -205,6 +206,33 @@ ipcMain.handle('set-history', (_event, payload: unknown) => {
   if (!payload || !Array.isArray(payload)) return false
   historyStore.set('items', payload)
   return true
+})
+
+ipcMain.handle('open-path', async (_event, targetPath: string) => {
+  if (!targetPath) return false
+  try {
+    const stats = await fs.stat(targetPath).catch(() => null)
+    if (stats?.isFile()) {
+      await shell.showItemInFolder(targetPath)
+      return true
+    }
+    await shell.openPath(targetPath)
+    return true
+  } catch (error) {
+    console.warn('[open-path] failed', error)
+    return false
+  }
+})
+
+ipcMain.handle('delete-path', async (_event, targetPath: string) => {
+  if (!targetPath) return false
+  try {
+    await fs.rm(targetPath, { recursive: true, force: true })
+    return true
+  } catch (error) {
+    console.warn('[delete-path] failed', error)
+    return false
+  }
 })
 
 const sanitizeSegment = (input: string) => input.replace(/[^a-zA-Z0-9._-]/g, '-')

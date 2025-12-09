@@ -1,7 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Bot, Check, CornerDownLeft, Download, FileCode, Loader2, Sparkles, X } from 'lucide-react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import rehypeRaw from 'rehype-raw'
+import 'katex/dist/katex.min.css'
 import { ChatMessage } from './types'
 
 type AgentProps = {
@@ -41,7 +47,9 @@ export function ResultPanel({
   hasFile
 }: ResultPanelProps) {
   const [exportFormat, setExportFormat] = useState<'pdf' | 'docx' | 'markdown'>('pdf')
+  const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'split'>('split')
   const exportDisabled = !markdownOutput || isExporting
+  const markdownPlugins = useMemo(() => [remarkGfm, remarkMath], [])
 
   return (
     <div className="relative flex flex-1 flex-col bg-white">
@@ -50,7 +58,24 @@ export function ResultPanel({
           <Sparkles className="text-yellow-500" size={18} />
           翻译结果
         </h2>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          <div className="flex rounded-lg border border-slate-200 bg-slate-50 text-xs font-medium text-slate-600 shadow-sm">
+            <button
+              className={`px-3 py-1.5 transition ${viewMode === 'edit' ? 'bg-white text-blue-600' : 'hover:text-blue-600'}`}
+              onClick={() => setViewMode('edit')}>
+              编辑
+            </button>
+            <button
+              className={`px-3 py-1.5 transition ${viewMode === 'preview' ? 'bg-white text-blue-600' : 'hover:text-blue-600'}`}
+              onClick={() => setViewMode('preview')}>
+              预览
+            </button>
+            <button
+              className={`px-3 py-1.5 transition ${viewMode === 'split' ? 'bg-white text-blue-600' : 'hover:text-blue-600'}`}
+              onClick={() => setViewMode('split')}>
+              双栏
+            </button>
+          </div>
           <select
             value={exportFormat}
             onChange={event => setExportFormat(event.target.value as 'pdf' | 'docx' | 'markdown')}
@@ -68,14 +93,50 @@ export function ResultPanel({
           </button>
         </div>
       </div>
-      <div className="relative flex-1">
+      <div className="relative flex-1 min-h-0">
         {markdownOutput ? (
-          <textarea
-            className="h-full w-full resize-none p-6 pb-24 font-mono text-sm leading-relaxed text-slate-700 focus:outline-none"
-            value={markdownOutput}
-            onChange={event => onContentChange(event.target.value)}
-            spellCheck={false}
-          />
+          <div
+            className={`grid h-full min-h-0 ${
+              viewMode === 'split' ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'
+            }`}>
+            {viewMode !== 'preview' && (
+              <textarea
+                className="h-full min-h-0 w-full resize-none border-r border-slate-100 p-6 pb-24 font-mono text-sm leading-relaxed text-slate-700 focus:outline-none"
+                value={markdownOutput}
+                onChange={event => onContentChange(event.target.value)}
+                spellCheck={false}
+              />
+            )}
+            {viewMode !== 'edit' && (
+              <div className="relative h-full min-h-0 overflow-y-auto bg-slate-50 p-6 pb-24 text-sm leading-relaxed text-slate-800">
+                <ReactMarkdown
+                  remarkPlugins={markdownPlugins}
+                  rehypePlugins={[rehypeKatex, rehypeRaw]}
+                  components={{
+                    img: props => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img {...props} className="my-2 max-h-[480px] max-w-full rounded-lg border border-slate-200 shadow-sm" />
+                    ),
+                    code: ({ inline, className, children, ...props }) => {
+                      return (
+                        <code
+                          className={`${className || ''} ${inline ? 'rounded bg-slate-100 px-1 py-0.5' : 'block rounded-lg bg-slate-900/90 px-3 py-2 text-slate-50 overflow-auto'}`}
+                          {...props}>
+                          {children}
+                        </code>
+                      )
+                    },
+                    ans: ({ children, ...props }) => (
+                      <mark className="rounded bg-yellow-100 px-1 py-0.5 text-slate-800" {...props}>
+                        {children}
+                      </mark>
+                    )
+                  }}>
+                  {markdownOutput}
+                </ReactMarkdown>
+              </div>
+            )}
+          </div>
         ) : (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-slate-300">
             <div className="text-center">
