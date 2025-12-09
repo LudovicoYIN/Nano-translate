@@ -9,6 +9,8 @@ type ElectronBridge = {
   setParserConfigs?: (payload: { parsers: unknown; activeId?: string }) => Promise<void>
   getPromptConfigs?: () => Promise<{ prompts: unknown; activeId?: string }>
   setPromptConfigs?: (payload: { prompts: unknown; activeId?: string }) => Promise<void>
+  getHistory?: () => Promise<unknown[]>
+  setHistory?: (items: unknown[]) => Promise<void>
   exportDocument?: (payload: {
     markdown: string
     format: 'markdown' | 'docx' | 'pdf'
@@ -53,7 +55,9 @@ const fallbackBridge: ElectronBridge = {
     console.warn(`[electronBridge] window action fallback: ${action}`)
     return Promise.resolve()
   },
-  readDir: async () => []
+  readDir: async () => [],
+  getHistory: async () => [],
+  setHistory: async () => {}
 }
 
 export const electronBridge: ElectronBridge = hasWindow && window.electron?.invoke
@@ -81,6 +85,8 @@ export const electronBridge: ElectronBridge = hasWindow && window.electron?.invo
       getPromptConfigs: () =>
         window.electron!.invoke!('get-prompt-configs').then(result => result as { prompts: unknown; activeId?: string }),
       setPromptConfigs: payload => window.electron!.invoke!('set-prompt-configs', payload).then(() => {}),
+      getHistory: () => window.electron!.invoke!('get-history').then(result => (Array.isArray(result) ? result : [])),
+      setHistory: items => window.electron!.invoke!('set-history', items).then(() => {}),
       exportDocument: payload =>
         window.electron!.invoke!('export-document', payload).then(
           result => result as { success?: boolean; filePath?: string; canceled?: boolean }

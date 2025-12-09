@@ -10,6 +10,8 @@ type Props = {
   prompts: PromptConfig[]
   activePromptId: string
   onPromptChange: (id: string) => void
+  activeHistoryId?: string | null
+  onSelectHistory?: (item: HistoryEntry) => void
 }
 
 export function HistorySidebar({
@@ -17,7 +19,9 @@ export function HistorySidebar({
   onSelectFiles,
   prompts,
   activePromptId,
-  onPromptChange
+  onPromptChange,
+  activeHistoryId,
+  onSelectHistory
 }: Props) {
   const inputId = useId()
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -58,21 +62,27 @@ export function HistorySidebar({
       </div>
       <nav className="flex-1 overflow-y-auto py-2">
         {items.map(item => (
-          <div
+          <button
             key={item.id}
-            className="group flex cursor-pointer items-center gap-3 border-l-2 border-transparent px-4 py-3 transition-all hover:border-blue-500 hover:bg-slate-100">
-            <div className="text-slate-400 transition-colors group-hover:text-blue-500">
+            className={`group flex w-full items-center gap-3 border-l-2 px-4 py-3 text-left transition-all hover:border-blue-500 hover:bg-slate-100 ${
+              item.id === activeHistoryId ? 'border-blue-500 bg-blue-50/70' : 'border-transparent'
+            }`}
+            onClick={() => onSelectHistory?.(item)}>
+            <div
+              className={`text-slate-400 transition-colors group-hover:text-blue-500 ${
+                item.id === activeHistoryId ? 'text-blue-500' : ''
+              }`}>
               {item.type === 'image' ? <ImageIcon size={16} /> : <FileText size={16} />}
             </div>
             <div className="min-w-0 flex-1">
-              <div
-                className="truncate text-sm font-medium text-slate-700 transition-colors group-hover:text-blue-700"
-                title={item.name}>
+              <div className="truncate text-sm font-medium text-slate-700 transition-colors group-hover:text-blue-700" title={item.name}>
                 {item.name}
               </div>
-              <div className="text-xs text-slate-400">{item.time}</div>
+              <div className="text-xs text-slate-400">
+                {item.status === 'processing' ? '处理中…' : item.status === 'failed' ? '失败' : item.time}
+              </div>
             </div>
-          </div>
+          </button>
         ))}
       </nav>
     </aside>

@@ -134,11 +134,20 @@ type PromptStoreShape = {
   activeId?: string
 }
 
+type HistoryStoreShape = {
+  items: unknown[]
+}
+
 type ExportFormat = 'markdown' | 'pdf' | 'docx'
 
 const promptStore = new Store<PromptStoreShape>({
   name: 'prompt-configs',
   defaults: { prompts: [], activeId: undefined }
+})
+
+const historyStore = new Store<HistoryStoreShape>({
+  name: 'history',
+  defaults: { items: [] }
 })
 
 ipcMain.handle('get-llm-configs', () => {
@@ -185,6 +194,16 @@ ipcMain.handle('set-prompt-configs', (_event, payload: PromptStoreShape) => {
   if (!payload || !Array.isArray(payload.prompts)) return false
   promptStore.set('prompts', payload.prompts)
   promptStore.set('activeId', payload.activeId)
+  return true
+})
+
+ipcMain.handle('get-history', () => {
+  return historyStore.get('items', [])
+})
+
+ipcMain.handle('set-history', (_event, payload: unknown) => {
+  if (!payload || !Array.isArray(payload)) return false
+  historyStore.set('items', payload)
   return true
 })
 

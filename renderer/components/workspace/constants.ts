@@ -47,9 +47,6 @@ export const DEFAULT_PARSERS: ParserConfig[] = [
 ]
 
 export const DEFAULT_HISTORY: HistoryEntry[] = [
-  { id: 'his-1', name: '项目计划书_en.pdf', time: '2分钟前', type: 'pdf' },
-  { id: 'his-2', name: 'Meeting_Notes.docx', time: '昨天', type: 'word' },
-  { id: 'his-3', name: 'Screenshot_001.png', time: '3天前', type: 'image' }
 ]
 
 export const DEFAULT_CHAT_HISTORY: ChatMessage[] = [

@@ -40,6 +40,24 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 const makeId = () => `${Date.now().toString(36)}-${Math.random().toString(16).slice(2)}`
 
+const formatHistoryTime = (timestamp?: number) => {
+  const date = timestamp ? new Date(timestamp) : new Date()
+  return date.toLocaleString('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+const detectHistoryType = (fileName: string): HistoryEntry['type'] => {
+  const lower = fileName.toLowerCase()
+  if (lower.endsWith('.pdf')) return 'pdf'
+  if (lower.endsWith('.doc') || lower.endsWith('.docx')) return 'word'
+  return 'image'
+}
+
 export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = false }: WorkspaceShellProps) {
   const [mode, setMode] = useState<WorkspaceMode>(initialMode)
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>(DEFAULT_CHAT_HISTORY)
@@ -74,7 +92,8 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const [parserLoaded, setParserLoaded] = useState(false)
   const [newParser, setNewParser] = useState({ name: '', type: 'MinerU', url: '', apiKey: '' })
   const [showAddParser, setShowAddParser] = useState(false)
-  const [historyItems] = useState(DEFAULT_HISTORY)
+  const [historyItems, setHistoryItems] = useState<HistoryEntry[]>([])
+  const [activeHistoryId, setActiveHistoryId] = useState<string | null>(null)
   const [windowState, setWindowState] = useState<'normal' | 'maximized' | 'fullscreen'>('normal')
   const chatEndRef = useRef<HTMLDivElement | null>(null)
   const chatAbortRef = useRef<AbortController | null>(null)
@@ -193,11 +212,70 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
     }
   }, [openSettingsOnMount])
 
+  useEffect(() => {
+    const loadHistory = async () => {
+      if (electronBridge.getHistory) {
+        try {
+          const stored = await electronBridge.getHistory()
+          if (Array.isArray(stored) && stored.length) {
+            setHistoryItems(stored as HistoryEntry[])
+            setActiveHistoryId((stored as HistoryEntry[])[0]?.id ?? null)
+            return
+          }
+        } catch (error) {
+          console.warn('[workspace] load history failed, fallback to default', error)
+        }
+      }
+      setHistoryItems([])
+    }
+    loadHistory()
+  }, [])
+
   const updateContent = (newContent: string) => {
     setMarkdownOutput(newContent)
   }
 
-  const processTranslation = async (file: WorkspaceFile) => {
+  const updateHistoryItems = (updater: (prev: HistoryEntry[]) => HistoryEntry[]) => {
+    setHistoryItems(prev => {
+      const next = updater(prev)
+      if (electronBridge.setHistory) {
+        electronBridge
+          .setHistory(next)
+          .catch(error => console.warn('[workspace] persist history failed', error))
+      }
+      return next
+    })
+  }
+
+  const handleSelectHistory = async (item: HistoryEntry) => {
+    setActiveHistoryId(item.id)
+    setResourceDir(item.extractDir ?? null)
+    const headerLines = [
+      '# 历史记录',
+      `- 文件：${item.name}`,
+      item.batchId ? `- Batch ID：${item.batchId}` : '',
+      item.fullZipUrl ? `- ZIP 下载：${item.fullZipUrl}` : '',
+      item.extractDir ? `- 解压目录：${item.extractDir}` : '',
+      item.fullMdPath ? `- full.md：${item.fullMdPath}` : '',
+      item.status === 'failed' && item.error ? `- 错误：${item.error}` : '',
+      ''
+    ].filter(Boolean)
+    if (item.fullMdPath && electronBridge.readLocalFile) {
+      try {
+        const content = await electronBridge.readLocalFile(item.fullMdPath)
+        updateContent([...headerLines, content || '（文件为空）'].join('\n'))
+        return
+      } catch (error) {
+        console.warn('[workspace] read history full.md failed', error)
+      }
+    }
+    const fallback = item.extractDir
+      ? `未能读取 full.md，请手动查看目录：${item.extractDir}`
+      : '该历史缺少可读取的 Markdown 文件。'
+    updateContent([...headerLines, fallback].join('\n'))
+  }
+
+  const processTranslation = async (file: WorkspaceFile, historyId?: string) => {
     setIsProcessing(true)
     setProcessingStep({ label: '正在读取文件...', percent: 5 })
     try {
@@ -261,6 +339,25 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
           markdownBody
         ]
         updateContent(header.join('\n'))
+        if (historyId) {
+          const finishedAt = Date.now()
+          updateHistoryItems(prev =>
+            prev.map(item =>
+              item.id === historyId
+                ? {
+                    ...item,
+                    status: 'done',
+                    time: formatHistoryTime(finishedAt),
+                    createdAt: item.createdAt ?? finishedAt,
+                    batchId: parseResult.batchId,
+                    extractDir: parseResult.extractDir,
+                    fullMdPath: parseResult.fullMdPath,
+                    fullZipUrl: parseResult.fullZipUrl
+                  }
+                : item
+            )
+          )
+        }
         setAgentHistory([])
         setProcessingStep({ label: '完成', percent: 100 })
       } else {
@@ -279,6 +376,21 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
         await wait(600)
         setProcessingStep({ label: '完成', percent: 100 })
         updateContent(translation.markdown)
+        if (historyId) {
+          const finishedAt = Date.now()
+          updateHistoryItems(prev =>
+            prev.map(item =>
+              item.id === historyId
+                ? {
+                    ...item,
+                    status: 'done',
+                    time: formatHistoryTime(finishedAt),
+                    createdAt: item.createdAt ?? finishedAt
+                  }
+                : item
+            )
+          )
+        }
         setAgentHistory([])
       }
       if (mode !== 'full') {
@@ -293,6 +405,22 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
       console.error('[workspace] 解析失败', error)
       setProcessingStep({ label: '解析失败', percent: 100 })
       updateContent(`解析失败：${error instanceof Error ? error.message : '未知错误'}`)
+      if (historyId) {
+        const failedAt = Date.now()
+        updateHistoryItems(prev =>
+          prev.map(item =>
+            item.id === historyId
+              ? {
+                  ...item,
+                  status: 'failed',
+                  error: error instanceof Error ? error.message : '未知错误',
+                  time: formatHistoryTime(failedAt),
+                  createdAt: item.createdAt ?? failedAt
+                }
+              : item
+          )
+        )
+      }
     } finally {
       setIsProcessing(false)
     }
@@ -302,6 +430,18 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
     const file = Array.from(files ?? [])[0]
     if (!file) return
     console.info('[workspace] selected file', file.name, file.size)
+    const historyId = makeId()
+    const createdAt = Date.now()
+    const newHistory: HistoryEntry = {
+      id: historyId,
+      name: file.name,
+      type: detectHistoryType(file.name),
+      time: '处理中',
+      status: 'processing',
+      createdAt
+    }
+    setActiveHistoryId(historyId)
+    updateHistoryItems(prev => [newHistory, ...prev])
     const workspaceFile: WorkspaceFile = {
       id: makeId(),
       name: file.name,
@@ -310,7 +450,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
       file
     }
     setFiles([workspaceFile])
-    processTranslation(workspaceFile)
+    processTranslation(workspaceFile, historyId)
   }
 
   const appendChat = (message: ChatMessage) => {
@@ -584,6 +724,20 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
     const paths = await electronBridge.openSystemFile()
     if (!paths.length) return
     const fileName = paths[0].split(/[/\\]/).pop() ?? '系统文件'
+    const historyId = makeId()
+    const createdAt = Date.now()
+    setActiveHistoryId(historyId)
+    updateHistoryItems(prev => [
+      {
+        id: historyId,
+        name: fileName,
+        type: detectHistoryType(fileName),
+        time: '处理中',
+        status: 'processing',
+        createdAt
+      },
+      ...prev
+    ])
     const placeholder: WorkspaceFile = {
       id: makeId(),
       name: fileName,
@@ -591,7 +745,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
       source: 'upload'
     }
     setFiles([placeholder])
-    processTranslation(placeholder)
+    processTranslation(placeholder, historyId)
   }
 
   const toggleMode = () => {
@@ -766,6 +920,8 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
               prompts={prompts}
               activePromptId={activePromptId}
               onPromptChange={setActivePromptId}
+              activeHistoryId={activeHistoryId}
+              onSelectHistory={handleSelectHistory}
             />
           )}
           <main className="relative flex flex-1 bg-white">

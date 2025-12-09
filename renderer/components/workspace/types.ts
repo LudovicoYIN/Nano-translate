@@ -28,6 +28,13 @@ export interface HistoryEntry {
   name: string
   time: string
   type: 'pdf' | 'word' | 'image'
+  status?: 'processing' | 'done' | 'failed'
+  batchId?: string
+  extractDir?: string
+  fullMdPath?: string
+  fullZipUrl?: string
+  error?: string
+  createdAt?: number
 }
 
 export interface ChatMessage {
