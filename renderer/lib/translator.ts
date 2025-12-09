@@ -65,7 +65,9 @@ export type ChatMessagePayload = {
 export async function requestChatCompletion(
   llm: LlmConfig,
   messages: ChatMessagePayload[],
-  temperature = 0.2
+  temperature = 0.2,
+  onDelta?: (content: string) => void,
+  signal?: AbortSignal
 ): Promise<string> {
   if (!llm?.baseUrl || !llm?.apiKey || !llm?.model) {
     throw new Error('未配置完整的大模型信息')
@@ -73,7 +75,8 @@ export async function requestChatCompletion(
   const body = {
     model: llm.model,
     temperature,
-    messages
+    messages,
+    stream: Boolean(onDelta)
   }
   const response = await fetch(resolveChatCompletionUrl(llm.baseUrl), {
     method: 'POST',
@@ -81,12 +84,51 @@ export async function requestChatCompletion(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${llm.apiKey}`
     },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal
   })
   if (!response.ok) {
     const text = await response.text().catch(() => '')
     throw new Error(`LLM 请求失败：HTTP ${response.status} ${text || response.statusText}`)
   }
+
+  if (onDelta && response.body) {
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let accumulated = ''
+    let buffer = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const rawLine of lines) {
+        const line = rawLine.trim()
+        if (!line || !line.startsWith('data:')) continue
+        const dataPart = line.slice(5).trim()
+        if (dataPart === '[DONE]') continue
+        try {
+          const parsed = JSON.parse(dataPart) as {
+            choices?: { delta?: { content?: string }; message?: { content?: string } }[]
+          }
+          const delta =
+            parsed.choices?.[0]?.delta?.content ?? parsed.choices?.[0]?.message?.content ?? ''
+          if (delta) {
+            accumulated += delta
+            onDelta?.(delta)
+          }
+        } catch (error) {
+          console.warn('[translator] parse stream chunk failed', error, dataPart)
+        }
+      }
+    }
+    if (accumulated.trim()) {
+      return accumulated.trim()
+    }
+    // fall through to try non流式解析
+  }
+
   const data = (await response.json().catch(() => null)) as {
     choices?: { message?: { content?: string } }[]
   } | null

@@ -59,6 +59,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const [prompts, setPrompts] = useState<PromptConfig[]>(DEFAULT_PROMPTS)
   const [activePromptId, setActivePromptId] = useState(prompts[0]?.id ?? 'general')
   const [promptsLoaded, setPromptsLoaded] = useState(false)
+  const [isChatSending, setIsChatSending] = useState(false)
   const [llmConfigs, setLlmConfigs] = useState<LlmConfig[]>(DEFAULT_LLMS)
   const [activeLlmId, setActiveLlmId] = useState(llmConfigs[0]?.id ?? '')
   const [llmLoaded, setLlmLoaded] = useState(false)
@@ -76,6 +77,7 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const [historyItems] = useState(DEFAULT_HISTORY)
   const [windowState, setWindowState] = useState<'normal' | 'maximized' | 'fullscreen'>('normal')
   const chatEndRef = useRef<HTMLDivElement | null>(null)
+  const chatAbortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -314,9 +316,15 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
   const appendChat = (message: ChatMessage) => {
     setChatHistory(prev => [...prev, message])
   }
+  const updateChatContent = (id: string, updater: (content: string) => string) => {
+    setChatHistory(prev =>
+      prev.map(item => (item.id === id ? { ...item, content: updater(item.content) } : item))
+    )
+  }
 
   const handleSendMessage = async () => {
     if (!inputContent.trim()) return
+    if (isChatSending) return
     const llmConfig = llmConfigs.find(item => item.id === activeLlmId)
     if (!llmConfig?.baseUrl || !llmConfig?.apiKey || !llmConfig?.model) {
       alert('请先在“设置-大模型”中配置可用的模型')
@@ -334,6 +342,17 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
     const conversation = [...chatHistory, userMessage].slice(-10)
     appendChat(userMessage)
     setInputContent('')
+    setIsChatSending(true)
+    chatAbortRef.current?.abort()
+    const controller = new AbortController()
+    chatAbortRef.current = controller
+    const replyId = makeId()
+    appendChat({
+      id: replyId,
+      role: 'ai',
+      content: '',
+      createdAt: Date.now()
+    })
     try {
       const messages = [
         { role: 'system' as const, content: `${systemPrompt}\n保持回答凝练。` },
@@ -342,21 +361,34 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
           content: item.content
         }))
       ]
-      const answer = await requestChatCompletion(llmConfig, messages, 0.4)
-      appendChat({
-        id: makeId(),
-        role: 'ai',
-        content: answer,
-        createdAt: Date.now()
-      })
+      const answer = await requestChatCompletion(
+        llmConfig,
+        messages,
+        0.4,
+        delta => updateChatContent(replyId, prev => `${prev}${delta}`),
+        controller.signal
+      )
+      updateChatContent(replyId, () => answer)
     } catch (error) {
-      appendChat({
-        id: makeId(),
-        role: 'ai',
-        content: error instanceof Error ? `回答失败：${error.message}` : '回答失败：未知错误',
-        createdAt: Date.now()
-      })
+      updateChatContent(
+        replyId,
+        () => {
+          if (error instanceof DOMException && error.name === 'AbortError') {
+            return '已暂停生成'
+          }
+          if (error instanceof Error) return `回答失败：${error.message}`
+          return '回答失败：未知错误'
+        }
+      )
+    } finally {
+      chatAbortRef.current = null
+      setIsChatSending(false)
     }
+  }
+
+  const handlePauseChat = () => {
+    if (!isChatSending) return
+    chatAbortRef.current?.abort()
   }
 
   const handleAgentAsk = async () => {
@@ -744,6 +776,12 @@ export function WorkspaceShell({ initialMode = 'full', openSettingsOnMount = fal
                 onInputChange={setInputContent}
                 onSend={handleSendMessage}
                 chatEndRef={chatEndRef}
+                prompts={prompts}
+                activePromptId={activePromptId}
+                onPromptChange={setActivePromptId}
+                onClear={() => setChatHistory([])}
+                isSending={isChatSending}
+                onPause={handlePauseChat}
               />
             ) : (
               <>
