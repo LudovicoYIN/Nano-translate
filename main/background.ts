@@ -271,6 +271,19 @@ const runPandocExport = async (
   const inputPath = path.join(tempDir, 'source.md')
   await fs.writeFile(inputPath, markdown, 'utf-8')
   const pandocPath = await resolvePandocBinary()
+  let luaFilter: string | null = null
+  if (target === 'docx') {
+    const filterCandidate = getResourcePath('pandoc', 'filters', 'raw-html-to-native.lua')
+    const filterExists = await fs
+      .access(filterCandidate)
+      .then(() => true)
+      .catch(() => false)
+    if (filterExists) {
+      luaFilter = filterCandidate
+    } else {
+      console.warn('[pandoc] 缺少 raw-html-to-native.lua，docx 导出可能丢失 HTML 表格')
+    }
+  }
   const args = [
     inputPath,
     '--from',
@@ -286,6 +299,9 @@ const runPandocExport = async (
   }
   if (options?.extraArgs?.length) {
     args.push(...options.extraArgs)
+  }
+  if (luaFilter) {
+    args.push('--lua-filter', luaFilter)
   }
   try {
     await execFileAsync(pandocPath, args)
