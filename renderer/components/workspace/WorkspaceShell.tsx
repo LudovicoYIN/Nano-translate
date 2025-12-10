@@ -933,6 +933,27 @@ function collectTranslatableSegments(items: MineruContentListItem[]): SegmentTas
         if (caption) {
           segments.push({ id: makeSegmentKey(path, 'image'), content: caption })
         }
+      } else if (node.type === 'table') {
+        const caption = Array.isArray(node.table_caption) ? node.table_caption.join(' ').trim() : ''
+        if (caption) {
+          segments.push({ id: makeSegmentKey(path, 'table_caption'), content: caption })
+        }
+        if (typeof node.table_body === 'string' && node.table_body.trim()) {
+          const tableRows = extractTableRows(node.table_body)
+          if (tableRows) {
+            tableRows.rows.forEach((row, rowIndex) => {
+              const content = row.trim()
+              if (content) {
+                segments.push({
+                  id: makeSegmentKey(path, 'table_row', rowIndex),
+                  content: `${content}</tr>`
+                })
+              }
+            })
+          } else {
+            segments.push({ id: makeSegmentKey(path, 'table_body'), content: node.table_body })
+          }
+        }
       }
     }
     if (Array.isArray(node.content)) {
@@ -988,8 +1009,23 @@ function renderContentListItem(
       return formatListContent(lines, item.sub_type)
     }
     if (item.type === 'table') {
-      const caption = Array.isArray(item.table_caption) ? item.table_caption.join(' ') : ''
-      const tableBody = item.table_body || ''
+      const captionKey = makeSegmentKey(path, 'table_caption')
+      const bodyKey = makeSegmentKey(path, 'table_body')
+      const captionRaw = Array.isArray(item.table_caption) ? item.table_caption.join(' ') : ''
+      const caption = translations.get(captionKey) ?? captionRaw
+      let tableBody = translations.get(bodyKey) ?? item.table_body ?? ''
+      const tableRows = typeof item.table_body === 'string' ? extractTableRows(item.table_body) : null
+      if (tableRows) {
+        const mergedRows = tableRows.rows.map((row, rowIndex) => {
+          const key = makeSegmentKey(path, 'table_row', rowIndex)
+          const translated = translations.get(key)
+          if (translated && translated.trim()) {
+            return translated.trim()
+          }
+          return `${row.trim()}</tr>`
+        })
+        tableBody = `${tableRows.prefix}${mergedRows.join('')}${tableRows.suffix}`
+      }
       const footnote = Array.isArray(item.table_footnote) ? item.table_footnote.join('\n') : ''
       return [caption, tableBody, footnote].filter(Boolean).join('\n\n')
     }
@@ -1013,8 +1049,16 @@ function renderContentListItem(
   return ''
 }
 
-function makeSegmentKey(path: number[], type: 'text' | 'image') {
-  return `${type}-${path.join('-')}`
+function makeSegmentKey(
+  path: number[],
+  type: 'text' | 'image' | 'table_caption' | 'table_body' | 'table_row',
+  index?: number
+) {
+  const base = `${type}-${path.join('-')}`
+  if (typeof index === 'number') {
+    return `${base}-${index}`
+  }
+  return base
 }
 
 function formatHeadingPrefix(level?: number) {
@@ -1048,4 +1092,18 @@ function mergeImageCaptions(lines?: string[]) {
     .map(line => (typeof line === 'string' ? line.trim() : ''))
     .filter(line => line.length > 0)
     .join('\n')
+}
+
+function extractTableRows(tableBody: string) {
+  if (!tableBody) return null
+  const match = tableBody.match(/^(\s*<table[^>]*>)([\s\S]*?)(<\/table>\s*)$/i)
+  if (!match) return null
+  const [, prefix, inner, suffix] = match
+  const rows = inner
+    .split(/<\/tr\s*>/i)
+    .map(row => row.trim())
+    .filter(row => row.length > 0)
+    .map(row => `${row}</tr>`)
+  if (!rows.length) return null
+  return { prefix, rows, suffix }
 }

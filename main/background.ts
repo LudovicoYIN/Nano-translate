@@ -274,7 +274,7 @@ const runPandocExport = async (
   const args = [
     inputPath,
     '--from',
-    'markdown',
+    'markdown+raw_html',
     '--standalone',
     '--to',
     target,
