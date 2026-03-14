@@ -1,4 +1,5 @@
 import path from 'path'
+import { constants as fsConstants } from 'fs'
 import fs from 'fs/promises'
 import os from 'os'
 import { execFile } from 'child_process'
@@ -244,21 +245,73 @@ const getResourcePath = (...segments: string[]) => {
   return path.join(__dirname, '..', 'resources', ...segments)
 }
 
-const resolvePandocBinary = async () => {
-  let subPath: string[] | null = null
-  if (process.platform === 'darwin') {
-    subPath = ['pandoc', 'mac', 'pandoc']
-  } else if (process.platform === 'win32') {
-    subPath = ['pandoc', 'win', 'pandoc.exe']
+const isExecutableFile = async (filePath: string) => {
+  try {
+    await fs.access(filePath, fsConstants.X_OK)
+    return true
+  } catch {
+    return false
   }
-  if (!subPath) {
+}
+
+const resolveFromPath = async (binaryName: string) => {
+  const pathValue = process.env.PATH || ''
+  const envCandidates = pathValue
+    .split(path.delimiter)
+    .filter(Boolean)
+    .map(dir => path.join(dir, binaryName))
+
+  const platformCandidates =
+    process.platform === 'darwin'
+      ? ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin'].map(dir => path.join(dir, binaryName))
+      : process.platform === 'win32'
+        ? []
+        : ['/usr/local/bin', '/usr/bin'].map(dir => path.join(dir, binaryName))
+
+  for (const candidate of [...envCandidates, ...platformCandidates]) {
+    if (await isExecutableFile(candidate)) {
+      return candidate
+    }
+  }
+
+  return null
+}
+
+const resolvePandocBinary = async () => {
+  let binaryName: string | null = null
+  const bundledCandidates: string[][] = []
+  if (process.platform === 'darwin') {
+    binaryName = 'pandoc'
+    bundledCandidates.push([`pandoc/mac-${process.arch}`, 'pandoc'], ['pandoc', 'mac', 'pandoc'])
+  } else if (process.platform === 'win32') {
+    binaryName = 'pandoc.exe'
+    bundledCandidates.push([`pandoc/win-${process.arch}`, 'pandoc.exe'], ['pandoc', 'win', 'pandoc.exe'])
+  } else if (process.platform === 'linux') {
+    binaryName = 'pandoc'
+    bundledCandidates.push([`pandoc/linux-${process.arch}`, 'pandoc'], ['pandoc', 'linux', 'pandoc'])
+  }
+
+  if (!binaryName) {
     throw new Error('当前系统暂未内置 Pandoc，无法导出该格式')
   }
-  const candidate = getResourcePath(...subPath)
-  await fs.access(candidate).catch(() => {
-    throw new Error(`未找到 Pandoc 可执行文件：${candidate}`)
-  })
-  return candidate
+
+  for (const segments of bundledCandidates) {
+    const candidate = getResourcePath(...segments)
+    if (await isExecutableFile(candidate)) {
+      return candidate
+    }
+  }
+
+  const pathBinary = await resolveFromPath(binaryName)
+  if (pathBinary) {
+    return pathBinary
+  }
+
+  const searchedPaths = bundledCandidates.map(segments => getResourcePath(...segments))
+  throw new Error(
+    `未找到 Pandoc 可执行文件。已检查内置路径：${searchedPaths.join('、')}。` +
+      `请安装 Pandoc，或将可执行文件放到应用资源目录后重试。`
+  )
 }
 
 const runPandocExport = async (

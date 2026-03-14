@@ -35,6 +35,7 @@ git clone git@github.com:MaximePremont/boilerplate-nextron-shadcn.git
 You can use `npm run next:dev` to start a next web application in development mode with hot reload.
 ### Run Electron ( desktop application ) in dev mode :
 You can use `npm run electron:dev` to start an electron desktop application in development mode with hot reload.
+The command will automatically download a bundled Pandoc binary into `resources/pandoc` when needed, so document export can work without a global Pandoc install.
 ### Build & Start Next ( web application ) :
 You can build your next web application by using `npm run next:build`. Then you can start it in production mode with `npm run next:start`.
 ### Build Electron ( desktop application ) :
